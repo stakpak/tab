@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "LLM Browser Agent",
+  "version": "0.1.0",
+  "description": "Browser extension for LLM-controlled web interaction",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "tabs",
+    "debugger",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "dist/content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "dist/popup.html",
+    "default_title": "LLM Browser Agent"
+  }
+}

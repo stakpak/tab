@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>E2E Test Page</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+    }
+
+    .section {
+      margin: 20px 0;
+      padding: 20px;
+      border: 1px solid #ccc;
+    }
+
+    input,
+    textarea {
+      padding: 8px;
+      margin: 5px 0;
+      width: 200px;
+    }
+
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      cursor: pointer;
+    }
+
+    #click-result,
+    #fill-result {
+      margin-top: 10px;
+      padding: 10px;
+      background: #f0f0f0;
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <h1>E2E Test Page</h1>
+
+    <section class="section">
+      <h2>Click Tests</h2>
+      <button id="test-button" aria-label="Test Button">Click Me</button>
+      <button id="counter-button">Count: 0</button>
+      <button id="dblclick-button">Double Click Me</button>
+      <a href="#clicked" id="test-link">Test Link</a>
+      <div id="click-result"></div>
+    </section>
+
+    <section class="section">
+      <h2>Fill Tests</h2>
+      <label for="text-input">Text Input:</label>
+      <input type="text" id="text-input" placeholder="Enter text here" />
+
+      <label for="search-input">Search:</label>
+      <input type="search" id="search-input" aria-label="Search" />
+
+      <label for="textarea">Textarea:</label>
+      <textarea id="textarea" placeholder="Enter multiline text"></textarea>
+
+      <div id="fill-result"></div>
+    </section>
+
+    <section class="section">
+      <h2>Form Test</h2>
+      <form id="test-form">
+        <input type="text" id="username" placeholder="Username" aria-label="Username" />
+        <input type="password" id="password" placeholder="Password" aria-label="Password" />
+
+        <label>
+          <input type="checkbox" id="checkbox-input" /> Check me
+        </label>
+
+        <select id="select-input" aria-label="Select an option">
+          <option value="option1">Option 1</option>
+          <option value="option2">Option 2</option>
+          <option value="option3">Option 3</option>
+        </select>
+
+        <button type="submit" id="submit-btn">Submit</button>
+      </form>
+      <div id="form-result"></div>
+    </section>
+
+    <nav aria-label="Main Navigation">
+      <a href="#home">Home</a>
+      <a href="#about">About</a>
+      <a href="#contact">Contact</a>
+    </nav>
+  </main>
+
+  <script>
+    // Click handlers
+    document.getElementById('test-button').addEventListener('click', () => {
+      document.getElementById('click-result').textContent = 'Button clicked!';
+    });
+
+    let count = 0;
+    document.getElementById('counter-button').addEventListener('click', (e) => {
+      count++;
+      e.target.textContent = `Count: ${count}`;
+    });
+
+    document.getElementById('dblclick-button').addEventListener('dblclick', () => {
+      document.getElementById('click-result').textContent = 'Double clicked!';
+    });
+
+    document.getElementById('test-link').addEventListener('click', (e) => {
+      document.getElementById('click-result').textContent = 'Link clicked!';
+    });
+
+    // Input handlers
+    document.getElementById('text-input').addEventListener('input', (e) => {
+      document.getElementById('fill-result').textContent = `Text: ${e.target.value}`;
+    });
+
+    document.getElementById('search-input').addEventListener('input', (e) => {
+      document.getElementById('fill-result').textContent = `Search: ${e.target.value}`;
+    });
+
+    document.getElementById('textarea').addEventListener('input', (e) => {
+      document.getElementById('fill-result').textContent = `Textarea: ${e.target.value}`;
+    });
+
+    // Form handler
+    document.getElementById('test-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      document.getElementById('form-result').textContent = `Submitted: ${username}`;
+    });
+  </script>
+</body>
+
+</html>
