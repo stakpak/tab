@@ -36,6 +36,32 @@
       padding: 10px;
       background: #f0f0f0;
     }
+
+    .drag-box {
+      display: inline-block;
+      width: 140px;
+      height: 60px;
+      line-height: 60px;
+      text-align: center;
+      border: 1px solid #888;
+      margin-right: 10px;
+      background: #fafafa;
+    }
+
+    .drop-box {
+      background: #f5f5ff;
+      border: 2px dashed #888;
+    }
+
+    #mouse-target {
+      width: 200px;
+      height: 80px;
+      border: 1px solid #999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #fff7e6;
+    }
   </style>
 </head>
 
@@ -92,6 +118,69 @@
       <a href="#about">About</a>
       <a href="#contact">Contact</a>
     </nav>
+
+    <section class="section">
+      <h2>Keyboard Tests</h2>
+      <input type="text" id="key-input" placeholder="Press keys here" aria-label="Key input" />
+      <div id="key-result"></div>
+    </section>
+
+    <section class="section">
+      <h2>Hover/Focus Tests</h2>
+      <button id="hover-button">Hover Over Me</button>
+      <input type="text" id="focus-input" placeholder="Focus me" aria-label="Focus input" />
+      <div id="hover-result"></div>
+      <div id="focus-result"></div>
+    </section>
+
+    <section class="section">
+      <h2>Drag and Drop Tests</h2>
+      <div id="drag-source" class="drag-box" draggable="true">Drag Source</div>
+      <div id="drag-target" class="drag-box drop-box">Drop Target</div>
+      <div id="drag-result"></div>
+    </section>
+
+    <section class="section">
+      <h2>Mouse Tests</h2>
+      <div id="mouse-target">Mouse Target</div>
+      <div id="mouse-result"></div>
+    </section>
+
+    <section class="section">
+      <h2>Upload Tests</h2>
+      <label for="file-input">Upload file</label>
+      <input type="file" id="file-input" />
+      <div id="upload-result"></div>
+    </section>
+
+    <section class="section">
+      <h2>Scroll Tests</h2>
+      <div id="scroll-container" style="height: 200px; overflow-y: auto; border: 1px solid #ccc;">
+        <div style="height: 1000px; padding: 20px;">
+          <p>Top of scroll area</p>
+          <div id="scroll-target" style="margin-top: 500px; padding: 20px; background: #e0e0e0;">
+            Scroll Target Element
+          </div>
+          <p style="margin-top: 300px;">Bottom of scroll area</p>
+        </div>
+      </div>
+      <div id="scroll-result"></div>
+    </section>
+
+    <section class="section">
+      <h2>Wait Tests</h2>
+      <button id="delayed-button">Show Element After Delay</button>
+      <div id="delayed-element" style="display: none; padding: 10px; background: #90EE90;">
+        I appeared after a delay!
+      </div>
+    </section>
+
+    <section class="section" style="height: 800px;">
+      <h2>Below Fold Content</h2>
+      <p>This section is below the fold to test scrollIntoView</p>
+      <button id="below-fold-button">Below Fold Button</button>
+      <div id="below-fold-result"></div>
+    </section>
   </main>
 
   <script>
@@ -133,6 +222,73 @@
       const username = document.getElementById('username').value;
       const password = document.getElementById('password').value;
       document.getElementById('form-result').textContent = `Submitted: ${username}`;
+    });
+
+    // Keyboard handlers
+    document.getElementById('key-input').addEventListener('keydown', (e) => {
+      document.getElementById('key-result').textContent = `Key pressed: ${e.key}`;
+    });
+
+    // Hover handlers
+    document.getElementById('hover-button').addEventListener('mouseenter', () => {
+      document.getElementById('hover-result').textContent = 'Hovered!';
+    });
+    document.getElementById('hover-button').addEventListener('mouseleave', () => {
+      document.getElementById('hover-result').textContent = 'Left hover';
+    });
+
+    // Drag and drop handlers
+    document.getElementById('drag-source').addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', 'drag-source');
+    });
+
+    document.getElementById('drag-target').addEventListener('dragover', (e) => {
+      e.preventDefault();
+    });
+
+    document.getElementById('drag-target').addEventListener('drop', (e) => {
+      e.preventDefault();
+      const data = e.dataTransfer.getData('text/plain');
+      document.getElementById('drag-result').textContent = `Dropped: ${data}`;
+    });
+
+    // Mouse handlers
+    const mouseTarget = document.getElementById('mouse-target');
+    mouseTarget.addEventListener('mousedown', () => {
+      document.getElementById('mouse-result').textContent = 'Mouse down';
+    });
+    mouseTarget.addEventListener('mouseup', () => {
+      document.getElementById('mouse-result').textContent = 'Mouse up';
+    });
+    mouseTarget.addEventListener('wheel', (e) => {
+      document.getElementById('mouse-result').textContent = `Wheel: ${e.deltaY}`;
+    });
+
+    // Focus handlers
+    document.getElementById('focus-input').addEventListener('focus', () => {
+      document.getElementById('focus-result').textContent = 'Focused!';
+    });
+    document.getElementById('focus-input').addEventListener('blur', () => {
+      document.getElementById('focus-result').textContent = 'Blurred';
+    });
+
+    // Delayed element handler
+    document.getElementById('delayed-button').addEventListener('click', () => {
+      setTimeout(() => {
+        document.getElementById('delayed-element').style.display = 'block';
+      }, 500);
+    });
+
+    // Below fold button
+    document.getElementById('below-fold-button').addEventListener('click', () => {
+      document.getElementById('below-fold-result').textContent = 'Below fold clicked!';
+    });
+
+    // Upload handler
+    document.getElementById('file-input').addEventListener('change', (e) => {
+      const input = e.target;
+      const file = input.files && input.files[0];
+      document.getElementById('upload-result').textContent = file ? file.name : 'No file';
     });
   </script>
 </body>

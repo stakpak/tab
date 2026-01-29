@@ -1,6 +1,6 @@
 import type { AgentCommand, AgentResponse, ExtensionConfig } from '../shared/types';
 
-export type CommandHandler = (command: AgentCommand) => Promise<AgentResponse>;
+export type CommandHandler = (command: AgentCommand, windowId: number) => Promise<AgentResponse>;
 
 // =============================================================================
 // CONNECTION STATE
@@ -24,16 +24,19 @@ export interface WebSocketManager {
 
 export interface WebSocketCallbacks {
   onStateChange?: (state: ConnectionState) => void;
+  onMaxReconnectAttemptsReached?: () => void;
 }
 
 /**
  * Create a WebSocket manager instance
  * @param config - Extension configuration
+ * @param windowId - The browser window ID this manager is associated with
  * @param onCommand - Handler for incoming commands
  * @param callbacks - Optional callbacks for state changes
  */
 export function createWebSocketManager(
   config: ExtensionConfig,
+  windowId: number,
   onCommand: CommandHandler,
   callbacks?: WebSocketCallbacks
 ): WebSocketManager {
@@ -139,15 +142,17 @@ export function createWebSocketManager(
 
       setState(ConnectionState.CONNECTING);
       shouldReconnect = true;
-      console.log('[WebSocket] Connecting to', config.websocketUrl);
+      // Connect to window-specific endpoint: ws://host:port/ws/session/{windowId}
+      const wsUrl = `${config.websocketUrl}/ws/session/${windowId}`;
+      console.log(`[WebSocket:${windowId}] Connecting to`, wsUrl);
 
       try {
-        ws = new WebSocket(config.websocketUrl);
+        ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
           setState(ConnectionState.CONNECTED);
           reconnectAttempts = 0;
-          console.log('[WebSocket] Connected');
+          console.log(`[WebSocket:${windowId}] Connected`);
           startHeartbeat();
         };
 
@@ -172,37 +177,45 @@ export function createWebSocketManager(
             return;
           }
 
-          console.log('[WebSocket] Received command:', command.id);
+          console.log(`[WebSocket:${windowId}] Received command:`, command.id);
 
           try {
-            const response = await onCommand(command);
-            manager.send(response);
+            const response = await onCommand(command, windowId);
+            try {
+              manager.send(response);
+            } catch (sendError) {
+              console.error('[WebSocket] Failed to send response:', sendError);
+            }
           } catch (error) {
             console.error('[WebSocket] Command handler error:', error);
-            manager.send({
-              id: command.id,
-              success: false,
-              error: error instanceof Error ? error.message : 'Unknown error',
-            });
+            try {
+              manager.send({
+                id: command.id,
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error',
+              });
+            } catch (sendError) {
+              console.error('[WebSocket] Failed to send error response:', sendError);
+            }
           }
         };
 
         ws.onerror = (error) => {
-          console.error('[WebSocket] Error:', error);
+          console.error(`[WebSocket:${windowId}] Error:`, error);
         };
 
         ws.onclose = () => {
           setState(ConnectionState.DISCONNECTED);
           ws = null;
           stopHeartbeat();
-          console.log('[WebSocket] Disconnected');
+          console.log(`[WebSocket:${windowId}] Disconnected`);
           if (shouldReconnect) {
             manager.attemptReconnect();
           }
         };
       } catch (error) {
         setState(ConnectionState.DISCONNECTED);
-        console.error('[WebSocket] Connection failed:', error);
+        console.error(`[WebSocket:${windowId}] Connection failed:`, error);
         manager.attemptReconnect();
       }
     },
@@ -220,18 +233,18 @@ export function createWebSocketManager(
         ws = null;
       }
       setState(ConnectionState.DISCONNECTED);
-      console.log('[WebSocket] Disconnected');
+      console.log(`[WebSocket:${windowId}] Disconnected`);
     },
 
     send(response: AgentResponse) {
       if (!ws || ws.readyState !== WebSocket.OPEN) {
-        console.error('[WebSocket] Cannot send: not connected');
+        console.error(`[WebSocket:${windowId}] Cannot send: not connected`);
         return;
       }
       try {
         ws.send(JSON.stringify(response));
       } catch (error) {
-        console.error('[WebSocket] Send error:', error);
+        console.error(`[WebSocket:${windowId}] Send error:`, error);
       }
     },
 
@@ -250,6 +263,7 @@ export function createWebSocketManager(
     attemptReconnect() {
       if (reconnectAttempts >= config.maxReconnectAttempts) {
         console.error('[WebSocket] Max reconnection attempts reached');
+        callbacks?.onMaxReconnectAttemptsReached?.();
         return;
       }
 

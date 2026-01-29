@@ -13,16 +13,15 @@ import {
 
 /**
  * Press a key
- * @param key - The key to press (e.g., "Enter", "Tab", "Escape")
- * @param ref - Optional reference ID to focus before pressing
+ * @param params - Object containing key and optional ref
  * @param registry - The ref registry from the last snapshot
  * @throws Error if element not found or not visible
  */
 export async function pressKey(
-    key: string,
-    ref: string | undefined,
+    params: { key: string; ref?: string },
     registry: RefRegistry
 ): Promise<void> {
+    const { key, ref } = params;
     let target: EventTarget = document.activeElement || document.body;
 
     if (ref) {

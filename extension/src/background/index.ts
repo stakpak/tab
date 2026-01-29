@@ -13,24 +13,29 @@ import type {
   ConnectionStatus,
 } from '../shared/messages';
 import { createWebSocketManager, type WebSocketManager, ConnectionState } from './websocket';
-import { routeCommand } from './router';
+import { routeCommand, clearTargetTabIfMatch } from './router';
 import { handleTabCommand } from './tabs';
+import { createEndpointManager, type EndpointManager } from './endpoint-manager';
+import { isNativeMessagingAvailable } from './native-messaging';
 
 // =============================================================================
 // STATE
 // =============================================================================
 
-let wsManager: WebSocketManager | null = null;
+const wsManagers = new Map<number, WebSocketManager>();
 let config: ExtensionConfig = { ...DEFAULT_CONFIG };
 let activityLog: ActivityLogEntry[] = [];
 const MAX_LOG_ENTRIES = 100;
+
+// Endpoint manager for daemon discovery via native messaging
+let endpointManager: EndpointManager | null = null;
 
 // =============================================================================
 // WEBSOCKET LIFECYCLE
 // =============================================================================
 
-function createManager(): void {
-  wsManager = createWebSocketManager(config, handleCommand, {
+function createManager(windowId: number): WebSocketManager {
+  const manager = createWebSocketManager(config, windowId, handleCommand, {
     onStateChange: (state: ConnectionState) => {
       const stateMap: Record<ConnectionState, ConnectionStatus> = {
         [ConnectionState.CONNECTED]: 'CONNECTED',
@@ -39,45 +44,117 @@ function createManager(): void {
       };
 
       const status = stateMap[state];
-      addLogEntry('connection', `Status: ${status.toLowerCase()}`);
+      addLogEntry('connection', `Window ${windowId}: ${status.toLowerCase()}`);
       broadcastStatusUpdate();
     },
+    onMaxReconnectAttemptsReached: () => {
+      addLogEntry('error', `Window ${windowId}: Max reconnect attempts reached`);
+      void refreshEndpointAndReconnect(windowId);
+    },
+  });
+
+  wsManagers.set(windowId, manager);
+  return manager;
+}
+
+function getOrCreateManager(windowId: number): WebSocketManager {
+  return wsManagers.get(windowId) ?? createManager(windowId);
+}
+
+/**
+ * Refresh daemon endpoint and reconnect a specific window.
+ * Called when max reconnect attempts are reached.
+ */
+async function refreshEndpointAndReconnect(windowId: number): Promise<void> {
+  if (!endpointManager) {
+    console.warn('[Background] No endpoint manager, cannot refresh');
+    return;
+  }
+
+  try {
+    addLogEntry('connection', 'Refreshing daemon endpoint...');
+    const endpoint = await endpointManager.refreshEndpoint();
+    const newUrl = endpointManager.buildWebSocketUrl(endpoint);
+
+    if (newUrl !== config.websocketUrl) {
+      config.websocketUrl = newUrl;
+      addLogEntry('connection', `Endpoint updated: ${newUrl}`);
+      const oldManager = wsManagers.get(windowId);
+      if (oldManager) {
+        oldManager.disconnect();
+        wsManagers.delete(windowId);
+      }
+
+      const newManager = createManager(windowId);
+      newManager.connect();
+    } else {
+      addLogEntry('connection', 'Endpoint unchanged, not reconnecting');
+    }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    addLogEntry('error', `Endpoint refresh failed: ${msg}`);
+  }
+}
+
+async function initWebSocket(): Promise<void> {
+
+  // Initialize endpoint manager if native messaging is available
+  if (!endpointManager && isNativeMessagingAvailable()) {
+    endpointManager = createEndpointManager({
+      onEndpointResolved: (endpoint, fromCache) => {
+        const source = fromCache ? 'cache' : 'native messaging';
+        addLogEntry('connection', `Endpoint resolved from ${source}: ${endpoint.ip}:${endpoint.port}`);
+      },
+      onEndpointError: (error) => {
+        addLogEntry('error', `Endpoint discovery failed: ${error.message}`);
+      },
+    });
+  }
+
+  // Get daemon endpoint via native messaging (or use default)
+  if (endpointManager) {
+    try {
+      const endpoint = await endpointManager.getEndpoint();
+      config.websocketUrl = endpointManager.buildWebSocketUrl(endpoint);
+      console.log('[Background] Using daemon endpoint:', config.websocketUrl);
+    } catch (error) {
+      console.warn('[Background] Failed to get daemon endpoint, using default:', error);
+      addLogEntry('error', 'Using default endpoint - native messaging failed');
+    }
+  }
+
+  const windows = await chrome.windows.getAll();
+  windows.forEach((window) => {
+    if (window.id === undefined) return;
+    const manager = getOrCreateManager(window.id);
+    manager.connect();
   });
 }
 
-function initWebSocket(): void {
-  if (!wsManager) {
-    createManager();
-  }
-  wsManager!.connect();
-}
-
-
-
-async function handleCommand(command: AgentCommand): Promise<AgentResponse> {
-  console.log('[Background] Received command:', command.id, command.type);
-  addLogEntry('command', `${command.type} (${command.id.slice(0, 8)}...)`);
+async function handleCommand(command: AgentCommand, windowId: number): Promise<AgentResponse> {
+  console.log(`[Background:${windowId}] Received command:`, command.id, command.type);
+  addLogEntry('command', `Window ${windowId}: ${command.type} (${command.id.slice(0, 8)}...)`);
 
   try {
     let response: AgentResponse;
 
     if (command.type === 'tab') {
-      const result = await handleTabCommand(command.params as any);
+      const result = await handleTabCommand(command.params as any, windowId);
       response = {
         id: command.id,
         ...result,
       };
     } else {
-      response = await routeCommand(command);
+      response = await routeCommand(command, windowId);
     }
 
-    console.log('[Background] Command completed:', command.id);
-    addLogEntry('response', `${command.type} ${response.success ? 'success' : 'failed'}`);
+    console.log(`[Background:${windowId}] Command completed:`, command.id);
+    addLogEntry('response', `Window ${windowId}: ${command.type} ${response.success ? 'success' : 'failed'}`);
     return response;
   } catch (error) {
-    console.error('[Background] Command failed:', command.id, error);
+    console.error(`[Background:${windowId}] Command failed:`, command.id, error);
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-    addLogEntry('error', `${command.type} error: ${errorMsg}`);
+    addLogEntry('error', `Window ${windowId}: ${command.type} error: ${errorMsg}`);
     return {
       id: command.id,
       success: false,
@@ -86,15 +163,11 @@ async function handleCommand(command: AgentCommand): Promise<AgentResponse> {
   }
 }
 
-function init(): void {
-  createManager();
-  wsManager!.connect();
+async function init(): Promise<void> {
+  await initWebSocket();
   console.log('[Background] Service worker initialized');
   addLogEntry('connection', 'Extension started');
 }
-
-// Initialize on load
-init();
 
 // =============================================================================
 // POPUP COMMUNICATION
@@ -106,20 +179,22 @@ function handlePopupMessage(
 ): boolean {
   switch (message.type) {
     case 'GET_STATUS': {
-      if (!wsManager) {
-        createManager();
+      const states = Array.from(wsManagers.values()).map((manager) => manager.getState());
+      let connectionStatus: ConnectionStatus = 'DISCONNECTED';
+      if (states.some((state) => state === ConnectionState.CONNECTED)) {
+        connectionStatus = 'CONNECTED';
+      } else if (states.some((state) => state === ConnectionState.CONNECTING)) {
+        connectionStatus = 'CONNECTING';
       }
 
-      const stateMap: Record<ConnectionState, ConnectionStatus> = {
-        [ConnectionState.CONNECTED]: 'CONNECTED',
-        [ConnectionState.CONNECTING]: 'CONNECTING',
-        [ConnectionState.DISCONNECTED]: 'DISCONNECTED',
-      };
+      const reconnectAttempts = states.length
+        ? Math.max(...Array.from(wsManagers.values()).map((manager) => manager.getReconnectAttempts()))
+        : 0;
 
       const response: StatusResponse = {
-        connectionStatus: stateMap[wsManager!.getState()],
+        connectionStatus,
         websocketUrl: config.websocketUrl,
-        reconnectAttempts: wsManager!.getReconnectAttempts(),
+        reconnectAttempts,
         maxReconnectAttempts: config.maxReconnectAttempts,
       };
       sendResponse(response);
@@ -127,15 +202,13 @@ function handlePopupMessage(
     }
 
     case 'CONNECT': {
-      initWebSocket();
+      void initWebSocket();
       sendResponse({ success: true });
       return true;
     }
 
     case 'DISCONNECT': {
-      if (wsManager) {
-        wsManager.disconnect();
-      }
+      wsManagers.forEach((manager) => manager.disconnect());
       sendResponse({ success: true });
       return true;
     }
@@ -145,10 +218,8 @@ function handlePopupMessage(
       if (url) {
         config.websocketUrl = url;
         // Recreate manager with new URL on next connect
-        if (wsManager) {
-          wsManager.disconnect();
-          wsManager = null;
-        }
+        wsManagers.forEach((manager) => manager.disconnect());
+        wsManagers.clear();
         addLogEntry('connection', `Server URL changed: ${url}`);
       }
       sendResponse({ success: true });
@@ -203,18 +274,22 @@ function broadcastToPopup(message: unknown): void {
 }
 
 function broadcastStatusUpdate(): void {
-  if (!wsManager) return;
+  const states = Array.from(wsManagers.values()).map((manager) => manager.getState());
+  let status: ConnectionStatus = 'DISCONNECTED';
+  if (states.some((state) => state === ConnectionState.CONNECTED)) {
+    status = 'CONNECTED';
+  } else if (states.some((state) => state === ConnectionState.CONNECTING)) {
+    status = 'CONNECTING';
+  }
 
-  const stateMap: Record<ConnectionState, ConnectionStatus> = {
-    [ConnectionState.CONNECTED]: 'CONNECTED',
-    [ConnectionState.CONNECTING]: 'CONNECTING',
-    [ConnectionState.DISCONNECTED]: 'DISCONNECTED',
-  };
+  const reconnectAttempts = states.length
+    ? Math.max(...Array.from(wsManagers.values()).map((manager) => manager.getReconnectAttempts()))
+    : 0;
 
   broadcastToPopup({
     type: 'STATUS_UPDATE',
-    status: stateMap[wsManager.getState()],
-    reconnectAttempts: wsManager.getReconnectAttempts(),
+    status,
+    reconnectAttempts,
     maxReconnectAttempts: config.maxReconnectAttempts,
   });
 }
@@ -228,3 +303,25 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return false;
 });
 
+// Clear target tab ID when a tab is closed to prevent commands running on wrong tabs
+chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+  clearTargetTabIfMatch(tabId, removeInfo.windowId);
+});
+
+// Track new windows and create a connection per window
+chrome.windows.onCreated.addListener((window) => {
+  if (window.id === undefined) return;
+  const manager = getOrCreateManager(window.id);
+  manager.connect();
+});
+
+chrome.windows.onRemoved.addListener((windowId) => {
+  const manager = wsManagers.get(windowId);
+  if (manager) {
+    manager.disconnect();
+    wsManagers.delete(windowId);
+  }
+});
+
+// Initialize on service worker start
+void init();

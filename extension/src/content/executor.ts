@@ -25,7 +25,7 @@ import { mouseAction } from './actions/mouse';
 import { dragAndDrop } from './actions/drag';
 
 // Module-level ref registry (snapshot-local, cleared on each snapshot)
-let currentRegistry: RefRegistry = createRefRegistry();
+let currentRegistry: RefRegistry | null = null;
 
 /**
  * Execute an action request from the background script
@@ -129,6 +129,9 @@ export async function executeAction(request: ContentRequest): Promise<ContentRes
       }
 
       case 'focus': {
+        if (!currentRegistry) {
+          return { success: false, error: 'No active snapshot - call snapshot action first' };
+        }
         const ref = request.params?.ref;
         if (!ref) return { success: false, error: 'Missing ref' };
         await focusElement(ref, currentRegistry);
@@ -136,6 +139,9 @@ export async function executeAction(request: ContentRequest): Promise<ContentRes
       }
 
       case 'hover': {
+        if (!currentRegistry) {
+          return { success: false, error: 'No active snapshot - call snapshot action first' };
+        }
         const ref = request.params?.ref;
         if (!ref) return { success: false, error: 'Missing ref' };
         await hoverElement(ref, currentRegistry);
@@ -143,6 +149,9 @@ export async function executeAction(request: ContentRequest): Promise<ContentRes
       }
 
       case 'press': {
+        if (!currentRegistry) {
+          return { success: false, error: 'No active snapshot - call snapshot action first' };
+        }
         const key = request.params?.key;
         const ref = request.params?.ref;
         if (!key) return { success: false, error: 'Missing key' };
@@ -151,6 +160,9 @@ export async function executeAction(request: ContentRequest): Promise<ContentRes
       }
 
       case 'check': {
+        if (!currentRegistry) {
+          return { success: false, error: 'No active snapshot - call snapshot action first' };
+        }
         const ref = request.params?.ref;
         if (!ref) return { success: false, error: 'Missing ref' };
         await setChecked(ref, true, currentRegistry);
@@ -158,6 +170,9 @@ export async function executeAction(request: ContentRequest): Promise<ContentRes
       }
 
       case 'uncheck': {
+        if (!currentRegistry) {
+          return { success: false, error: 'No active snapshot - call snapshot action first' };
+        }
         const ref = request.params?.ref;
         if (!ref) return { success: false, error: 'Missing ref' };
         await setChecked(ref, false, currentRegistry);
@@ -165,6 +180,9 @@ export async function executeAction(request: ContentRequest): Promise<ContentRes
       }
 
       case 'select': {
+        if (!currentRegistry) {
+          return { success: false, error: 'No active snapshot - call snapshot action first' };
+        }
         const ref = request.params?.ref;
         const value = request.params?.value;
         if (!ref || value === undefined) return { success: false, error: 'Missing ref or value' };
@@ -173,6 +191,9 @@ export async function executeAction(request: ContentRequest): Promise<ContentRes
       }
 
       case 'get': {
+        if (!currentRegistry) {
+          return { success: false, error: 'No active snapshot - call snapshot action first' };
+        }
         const what = request.params?.what as any;
         const ref = request.params?.ref;
         const selector = request.params?.selector;
@@ -186,6 +207,9 @@ export async function executeAction(request: ContentRequest): Promise<ContentRes
       }
 
       case 'is': {
+        if (!currentRegistry) {
+          return { success: false, error: 'No active snapshot - call snapshot action first' };
+        }
         const what = request.params?.what as any;
         const ref = request.params?.ref;
         if (!what || !ref) return { success: false, error: 'Missing what or ref' };
@@ -204,6 +228,9 @@ export async function executeAction(request: ContentRequest): Promise<ContentRes
       }
 
       case 'scrollintoview': {
+        if (!currentRegistry) {
+          return { success: false, error: 'No active snapshot - call snapshot action first' };
+        }
         const ref = request.params?.ref;
         if (!ref) return { success: false, error: 'Missing ref' };
         await scrollIntoView(ref, currentRegistry);
@@ -211,6 +238,9 @@ export async function executeAction(request: ContentRequest): Promise<ContentRes
       }
 
       case 'wait': {
+        if (!currentRegistry) {
+          return { success: false, error: 'No active snapshot - call snapshot action first' };
+        }
         const ms = request.params?.ms;
         const ref = request.params?.ref;
         const selector = request.params?.selector;
@@ -219,6 +249,9 @@ export async function executeAction(request: ContentRequest): Promise<ContentRes
       }
 
       case 'drag': {
+        if (!currentRegistry) {
+          return { success: false, error: 'No active snapshot - call snapshot action first' };
+        }
         const src = request.params?.src;
         const dst = request.params?.dst;
         if (!src || !dst) return { success: false, error: 'Missing src or dst' };
@@ -227,6 +260,9 @@ export async function executeAction(request: ContentRequest): Promise<ContentRes
       }
 
       case 'find': {
+        if (!currentRegistry) {
+          currentRegistry = createRefRegistry();
+        }
         const locator = request.params?.locator as any;
         const value = request.params?.value;
         if (!locator || !value) return { success: false, error: 'Missing locator or value' };
@@ -234,7 +270,9 @@ export async function executeAction(request: ContentRequest): Promise<ContentRes
           { locator, value, text: request.params?.text },
           currentRegistry
         );
-        return { success: true, data: { result: ref } };
+        // Return array format per protocol spec: [{ ref: "...", nodeId: "..." }]
+        const result = ref ? [{ ref, nodeId: ref }] : [];
+        return { success: true, data: { result } };
       }
 
       case 'mouse': {

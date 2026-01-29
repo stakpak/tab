@@ -6,6 +6,17 @@
 import type { MouseParams } from '../../shared/types';
 
 /**
+ * Get element at coordinates or throw error
+ */
+function getElementAtPoint(x: number, y: number): Element {
+    const element = document.elementFromPoint(x, y);
+    if (!element) {
+        throw new Error(`No element found at coordinates (${x}, ${y})`);
+    }
+    return element;
+}
+
+/**
  * Perform mouse action
  * @param params - Mouse parameters
  */
@@ -14,6 +25,7 @@ export async function mouseAction(params: MouseParams): Promise<void> {
 
     switch (action) {
         case 'move': {
+            const target = getElementAtPoint(x, y);
             const event = new MouseEvent('mousemove', {
                 bubbles: true,
                 cancelable: true,
@@ -21,11 +33,12 @@ export async function mouseAction(params: MouseParams): Promise<void> {
                 clientX: x,
                 clientY: y
             });
-            document.elementFromPoint(x, y)?.dispatchEvent(event);
+            target.dispatchEvent(event);
             break;
         }
 
         case 'down': {
+            const target = getElementAtPoint(x, y);
             const event = new MouseEvent('mousedown', {
                 bubbles: true,
                 cancelable: true,
@@ -34,11 +47,12 @@ export async function mouseAction(params: MouseParams): Promise<void> {
                 clientY: y,
                 button: button
             });
-            document.elementFromPoint(x, y)?.dispatchEvent(event);
+            target.dispatchEvent(event);
             break;
         }
 
         case 'up': {
+            const target = getElementAtPoint(x, y);
             const event = new MouseEvent('mouseup', {
                 bubbles: true,
                 cancelable: true,
@@ -47,11 +61,12 @@ export async function mouseAction(params: MouseParams): Promise<void> {
                 clientY: y,
                 button: button
             });
-            document.elementFromPoint(x, y)?.dispatchEvent(event);
+            target.dispatchEvent(event);
             break;
         }
 
         case 'wheel': {
+            const target = document.elementFromPoint(x, y);
             const event = new WheelEvent('wheel', {
                 bubbles: true,
                 cancelable: true,
@@ -61,12 +76,17 @@ export async function mouseAction(params: MouseParams): Promise<void> {
                 deltaX: dx,
                 deltaY: dy
             });
-            document.elementFromPoint(x, y)?.dispatchEvent(event);
-            // Also actually scroll if it's a wheel event on the window/body
-            if (!document.elementFromPoint(x, y)) {
+            if (target) {
+                target.dispatchEvent(event);
+            } else {
+                // No element at point, scroll the window directly
                 window.scrollBy(dx, dy);
             }
             break;
+        }
+
+        default: {
+            throw new Error(`Unknown mouse action: ${action}`);
         }
     }
 }

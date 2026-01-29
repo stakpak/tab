@@ -135,16 +135,16 @@ function traverseDOM(element, depth, state, insideInteractive = false) {
     return;
   }
   const role = getAccessibilityRole(element);
-  const isInteractive2 = role !== null && INTERACTIVE_ROLES.has(role);
+  const isInteractive = role !== null && INTERACTIVE_ROLES.has(role);
   const isStructural = role !== null && STRUCTURAL_ROLES.has(role);
   const isTextRole = role !== null && TEXT_ROLES.has(role);
   const isClickable = isElementClickable(element);
   const name = getAccessibleName(element);
   const isGeneric = !role || role === "generic";
-  const skipBecauseNested = insideInteractive && isGeneric && !isInteractive2;
-  const shouldInclude = !skipBecauseNested && (isInteractive2 || isStructural || isTextRole || isClickable || Boolean(name));
+  const skipBecauseNested = insideInteractive && isGeneric && !isInteractive;
+  const shouldInclude = !skipBecauseNested && (isInteractive || isStructural || isTextRole || isClickable || Boolean(name));
   let ref;
-  if ((isInteractive2 || isClickable) && !insideInteractive) {
+  if ((isInteractive || isClickable) && !insideInteractive) {
     state.refCounter++;
     ref = `e${state.refCounter}`;
     state.registry.set(ref, element);
@@ -155,7 +155,7 @@ function traverseDOM(element, depth, state, insideInteractive = false) {
     state.lines.push(line);
   }
   const nextDepth = shouldInclude ? depth + 1 : depth;
-  const nextInsideInteractive = insideInteractive || isInteractive2 || isClickable && !isGeneric;
+  const nextInsideInteractive = insideInteractive || isInteractive || isClickable && !isGeneric;
   for (const child of element.children) {
     traverseDOM(child, nextDepth, state, nextInsideInteractive);
   }
@@ -567,10 +567,7 @@ async function clickElement(ref, registry) {
   element.dispatchEvent(new PointerEvent("pointerup", { ...commonEventInit, buttons: 0, isPrimary: true }));
   element.dispatchEvent(new MouseEvent("mouseup", { ...commonEventInit, buttons: 0 }));
   const clickEvent = new MouseEvent("click", { ...commonEventInit, buttons: 0 });
-  const cancelled = !element.dispatchEvent(clickEvent);
-  if (!cancelled && typeof element.click === "function") {
-    element.click();
-  }
+  element.dispatchEvent(clickEvent);
 }
 
 // src/content/actions/dblclick.ts
@@ -807,7 +804,8 @@ async function hoverElement(ref, registry) {
 }
 
 // src/content/actions/press.ts
-async function pressKey(key, ref, registry) {
+async function pressKey(params, registry) {
+  const { key, ref } = params;
   let target = document.activeElement || document.body;
   if (ref) {
     const element = registry.get(ref);
@@ -980,8 +978,12 @@ async function checkState(params, registry) {
 }
 
 // src/content/actions/scroll.ts
-async function scroll(params, registry) {
+var VALID_DIRECTIONS = ["up", "down", "left", "right"];
+async function scroll(params, _registry) {
   const { direction, pixels = 300 } = params;
+  if (!direction || !VALID_DIRECTIONS.includes(direction)) {
+    throw new Error(`Invalid scroll direction: "${direction}". Must be one of: ${VALID_DIRECTIONS.join(", ")}`);
+  }
   let x = 0;
   let y = 0;
   switch (direction) {
@@ -1017,6 +1019,9 @@ async function scrollIntoView(ref, registry) {
 // src/content/actions/wait.ts
 async function wait(params, registry) {
   const { ms, ref, selector } = params;
+  if (!ms && !ref && !selector) {
+    throw new Error("wait requires at least one parameter: ms, ref, or selector");
+  }
   if (ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
@@ -1028,10 +1033,14 @@ async function wait(params, registry) {
     return new Promise((resolve, reject) => {
       const start = Date.now();
       const timeout = 1e4;
+      let stopped = false;
       const check = () => {
+        if (stopped) return;
         if (isElementVisible2(element)) {
+          stopped = true;
           resolve();
         } else if (Date.now() - start > timeout) {
+          stopped = true;
           reject(new Error(`Timeout waiting for element ${ref} to become visible`));
         } else {
           setTimeout(check, 100);
@@ -1044,11 +1053,15 @@ async function wait(params, registry) {
     return new Promise((resolve, reject) => {
       const start = Date.now();
       const timeout = 1e4;
+      let stopped = false;
       const check = () => {
+        if (stopped) return;
         const element = document.querySelector(selector);
         if (element && isElementVisible2(element)) {
+          stopped = true;
           resolve();
         } else if (Date.now() - start > timeout) {
+          stopped = true;
           reject(new Error(`Timeout waiting for selector "${selector}" to appear and be visible`));
         } else {
           setTimeout(check, 100);
@@ -1060,6 +1073,7 @@ async function wait(params, registry) {
 }
 
 // src/content/actions/find.ts
+var findRefCounter = 0;
 async function findElement(params, registry) {
   const { locator, value, text } = params;
   let elements = [];
@@ -1112,7 +1126,7 @@ async function findElement(params, registry) {
     for (const [ref, el] of registry.entries.entries()) {
       if (el === found) return ref;
     }
-    const newRef = `f${Math.floor(Math.random() * 1e4)}`;
+    const newRef = `f${Date.now()}_${++findRefCounter}`;
     registry.set(newRef, found);
     return newRef;
   }
@@ -1120,10 +1134,18 @@ async function findElement(params, registry) {
 }
 
 // src/content/actions/mouse.ts
+function getElementAtPoint(x, y) {
+  const element = document.elementFromPoint(x, y);
+  if (!element) {
+    throw new Error(`No element found at coordinates (${x}, ${y})`);
+  }
+  return element;
+}
 async function mouseAction(params) {
   const { action, x = 0, y = 0, button = 0, dx = 0, dy = 0 } = params;
   switch (action) {
     case "move": {
+      const target = getElementAtPoint(x, y);
       const event = new MouseEvent("mousemove", {
         bubbles: true,
         cancelable: true,
@@ -1131,10 +1153,11 @@ async function mouseAction(params) {
         clientX: x,
         clientY: y
       });
-      document.elementFromPoint(x, y)?.dispatchEvent(event);
+      target.dispatchEvent(event);
       break;
     }
     case "down": {
+      const target = getElementAtPoint(x, y);
       const event = new MouseEvent("mousedown", {
         bubbles: true,
         cancelable: true,
@@ -1143,10 +1166,11 @@ async function mouseAction(params) {
         clientY: y,
         button
       });
-      document.elementFromPoint(x, y)?.dispatchEvent(event);
+      target.dispatchEvent(event);
       break;
     }
     case "up": {
+      const target = getElementAtPoint(x, y);
       const event = new MouseEvent("mouseup", {
         bubbles: true,
         cancelable: true,
@@ -1155,10 +1179,11 @@ async function mouseAction(params) {
         clientY: y,
         button
       });
-      document.elementFromPoint(x, y)?.dispatchEvent(event);
+      target.dispatchEvent(event);
       break;
     }
     case "wheel": {
+      const target = document.elementFromPoint(x, y);
       const event = new WheelEvent("wheel", {
         bubbles: true,
         cancelable: true,
@@ -1168,11 +1193,15 @@ async function mouseAction(params) {
         deltaX: dx,
         deltaY: dy
       });
-      document.elementFromPoint(x, y)?.dispatchEvent(event);
-      if (!document.elementFromPoint(x, y)) {
+      if (target) {
+        target.dispatchEvent(event);
+      } else {
         window.scrollBy(dx, dy);
       }
       break;
+    }
+    default: {
+      throw new Error(`Unknown mouse action: ${action}`);
     }
   }
 }
@@ -1182,8 +1211,14 @@ async function dragAndDrop(params, registry) {
   const { src, dst } = params;
   const srcEl = registry.get(src);
   const dstEl = registry.get(dst);
-  if (!srcEl) throw new Error(`Source element "${src}" not found`);
-  if (!dstEl) throw new Error(`Destination element "${dst}" not found`);
+  if (!srcEl) throw new Error(`Source element "${src}" not found in registry`);
+  if (!dstEl) throw new Error(`Destination element "${dst}" not found in registry`);
+  if (!document.contains(srcEl)) {
+    throw new Error(`Source element "${src}" is no longer in the DOM`);
+  }
+  if (!document.contains(dstEl)) {
+    throw new Error(`Destination element "${dst}" is no longer in the DOM`);
+  }
   await scrollIntoViewIfNeeded(srcEl);
   await scrollIntoViewIfNeeded(dstEl);
   const srcRect = srcEl.getBoundingClientRect();
@@ -1196,37 +1231,49 @@ async function dragAndDrop(params, registry) {
   srcEl.dispatchEvent(new DragEvent("dragstart", {
     bubbles: true,
     cancelable: true,
-    dataTransfer
+    dataTransfer,
+    clientX: startX,
+    clientY: startY
   }));
   srcEl.dispatchEvent(new DragEvent("drag", {
     bubbles: true,
     cancelable: true,
-    dataTransfer
+    dataTransfer,
+    clientX: startX,
+    clientY: startY
   }));
   dstEl.dispatchEvent(new DragEvent("dragenter", {
     bubbles: true,
     cancelable: true,
-    dataTransfer
+    dataTransfer,
+    clientX: endX,
+    clientY: endY
   }));
   dstEl.dispatchEvent(new DragEvent("dragover", {
     bubbles: true,
     cancelable: true,
-    dataTransfer
+    dataTransfer,
+    clientX: endX,
+    clientY: endY
   }));
   dstEl.dispatchEvent(new DragEvent("drop", {
     bubbles: true,
     cancelable: true,
-    dataTransfer
+    dataTransfer,
+    clientX: endX,
+    clientY: endY
   }));
   srcEl.dispatchEvent(new DragEvent("dragend", {
     bubbles: true,
     cancelable: true,
-    dataTransfer
+    dataTransfer,
+    clientX: endX,
+    clientY: endY
   }));
 }
 
 // src/content/executor.ts
-var currentRegistry = createRefRegistry();
+var currentRegistry = null;
 async function executeAction(request) {
   try {
     switch (request.action) {
@@ -1320,18 +1367,27 @@ async function executeAction(request) {
         return { success: true, data: { executed: true } };
       }
       case "focus": {
+        if (!currentRegistry) {
+          return { success: false, error: "No active snapshot - call snapshot action first" };
+        }
         const ref = request.params?.ref;
         if (!ref) return { success: false, error: "Missing ref" };
         await focusElement(ref, currentRegistry);
         return { success: true, data: { executed: true } };
       }
       case "hover": {
+        if (!currentRegistry) {
+          return { success: false, error: "No active snapshot - call snapshot action first" };
+        }
         const ref = request.params?.ref;
         if (!ref) return { success: false, error: "Missing ref" };
         await hoverElement(ref, currentRegistry);
         return { success: true, data: { executed: true } };
       }
       case "press": {
+        if (!currentRegistry) {
+          return { success: false, error: "No active snapshot - call snapshot action first" };
+        }
         const key = request.params?.key;
         const ref = request.params?.ref;
         if (!key) return { success: false, error: "Missing key" };
@@ -1339,18 +1395,27 @@ async function executeAction(request) {
         return { success: true, data: { executed: true } };
       }
       case "check": {
+        if (!currentRegistry) {
+          return { success: false, error: "No active snapshot - call snapshot action first" };
+        }
         const ref = request.params?.ref;
         if (!ref) return { success: false, error: "Missing ref" };
         await setChecked(ref, true, currentRegistry);
         return { success: true, data: { executed: true } };
       }
       case "uncheck": {
+        if (!currentRegistry) {
+          return { success: false, error: "No active snapshot - call snapshot action first" };
+        }
         const ref = request.params?.ref;
         if (!ref) return { success: false, error: "Missing ref" };
         await setChecked(ref, false, currentRegistry);
         return { success: true, data: { executed: true } };
       }
       case "select": {
+        if (!currentRegistry) {
+          return { success: false, error: "No active snapshot - call snapshot action first" };
+        }
         const ref = request.params?.ref;
         const value = request.params?.value;
         if (!ref || value === void 0) return { success: false, error: "Missing ref or value" };
@@ -1358,6 +1423,9 @@ async function executeAction(request) {
         return { success: true, data: { executed: true } };
       }
       case "get": {
+        if (!currentRegistry) {
+          return { success: false, error: "No active snapshot - call snapshot action first" };
+        }
         const what = request.params?.what;
         const ref = request.params?.ref;
         const selector = request.params?.selector;
@@ -1370,6 +1438,9 @@ async function executeAction(request) {
         return { success: true, data: { result } };
       }
       case "is": {
+        if (!currentRegistry) {
+          return { success: false, error: "No active snapshot - call snapshot action first" };
+        }
         const what = request.params?.what;
         const ref = request.params?.ref;
         if (!what || !ref) return { success: false, error: "Missing what or ref" };
@@ -1386,12 +1457,18 @@ async function executeAction(request) {
         return { success: true, data: { executed: true } };
       }
       case "scrollintoview": {
+        if (!currentRegistry) {
+          return { success: false, error: "No active snapshot - call snapshot action first" };
+        }
         const ref = request.params?.ref;
         if (!ref) return { success: false, error: "Missing ref" };
         await scrollIntoView(ref, currentRegistry);
         return { success: true, data: { executed: true } };
       }
       case "wait": {
+        if (!currentRegistry) {
+          return { success: false, error: "No active snapshot - call snapshot action first" };
+        }
         const ms = request.params?.ms;
         const ref = request.params?.ref;
         const selector = request.params?.selector;
@@ -1399,6 +1476,9 @@ async function executeAction(request) {
         return { success: true, data: { executed: true } };
       }
       case "drag": {
+        if (!currentRegistry) {
+          return { success: false, error: "No active snapshot - call snapshot action first" };
+        }
         const src = request.params?.src;
         const dst = request.params?.dst;
         if (!src || !dst) return { success: false, error: "Missing src or dst" };
@@ -1406,6 +1486,9 @@ async function executeAction(request) {
         return { success: true, data: { executed: true } };
       }
       case "find": {
+        if (!currentRegistry) {
+          currentRegistry = createRefRegistry();
+        }
         const locator = request.params?.locator;
         const value = request.params?.value;
         if (!locator || !value) return { success: false, error: "Missing locator or value" };
@@ -1413,7 +1496,8 @@ async function executeAction(request) {
           { locator, value, text: request.params?.text },
           currentRegistry
         );
-        return { success: true, data: { result: ref } };
+        const result = ref ? [{ ref, nodeId: ref }] : [];
+        return { success: true, data: { result } };
       }
       case "mouse": {
         const action = request.params?.action;

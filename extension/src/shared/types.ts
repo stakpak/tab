@@ -179,7 +179,11 @@ export interface ResponseData {
   snapshot?: string;
   result?: any;
   tabs?: TabInfo[];
+  activeTabId?: number;
   screenshot?: string;
+  pdf?: string;
+  url?: string;
+  title?: string;
 }
 
 /**
@@ -220,10 +224,12 @@ export interface ExtensionConfig {
   heartbeatTimeout: number;
 }
 
+declare const process: { env: { WS_URL: string } };
+
 export const DEFAULT_CONFIG: ExtensionConfig = {
-  websocketUrl: 'ws://localhost:8080',
+  websocketUrl: process.env.WS_URL || 'ws://localhost:9222',
   reconnectInterval: 3000,
   maxReconnectAttempts: 10,
   heartbeatInterval: 30000,  // Send ping every 30 seconds
-  heartbeatTimeout: 5000,    // Wait 5 seconds for pong
+  heartbeatTimeout: 10000,   // Wait 10 seconds for pong (aligned with daemon)
 };

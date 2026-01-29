@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "WebSocket Protocol Schema for Extension",
+  "description": "Schema definitions for AgentCommand, AgentResponse, and ping/pong messages used by the extension.",
+  "type": "object",
+  "oneOf": [
+    { "$ref": "#/definitions/AgentCommand" },
+    { "$ref": "#/definitions/AgentResponse" },
+    { "$ref": "#/definitions/PingMessage" },
+    { "$ref": "#/definitions/PongMessage" }
+  ],
+  "definitions": {
+    "AgentCommand": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": {
+          "type": "string",
+          "enum": [
+            "snapshot",
+            "click",
+            "dblclick",
+            "fill",
+            "type",
+            "press",
+            "hover",
+            "focus",
+            "check",
+            "uncheck",
+            "select",
+            "tab",
+            "open",
+            "get",
+            "is",
+            "drag",
+            "upload",
+            "scroll",
+            "scrollintoview",
+            "wait",
+            "screenshot",
+            "pdf",
+            "eval",
+            "close",
+            "back",
+            "forward",
+            "reload",
+            "find",
+            "mouse"
+          ]
+        },
+        "params": { "type": ["object"], "additionalProperties": true }
+      }
+    },
+
+    "AgentResponse": {
+      "type": "object",
+      "required": ["id", "success"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "success": { "type": "boolean" },
+        "data": { "type": ["object", "null"], "additionalProperties": true },
+        "error": { "type": "string" }
+      }
+    },
+
+    "PingMessage": {
+      "type": "object",
+      "required": ["type"],
+      "properties": { "type": { "const": "ping" } },
+      "additionalProperties": true
+    },
+
+    "PongMessage": {
+      "type": "object",
+      "required": ["type"],
+      "properties": { "type": { "const": "pong" } },
+      "additionalProperties": true
+    }
+  }
+}

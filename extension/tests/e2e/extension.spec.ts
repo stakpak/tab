@@ -866,6 +866,640 @@ test.describe('Fill Command', () => {
 });
 
 // =============================================================================
+// PRESS COMMAND TESTS
+// =============================================================================
+
+test.describe('Press Command', () => {
+  test('presses key on focused element', async () => {
+    const mockServer = new MockWebSocketServer({ port: 8095 });
+    await mockServer.start();
+
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-ext-'));
+    const context = await chromium.launchPersistentContext(userDataDir, {
+      headless: false,
+      args: [
+        `--disable-extensions-except=${EXTENSION_PATH}`,
+        `--load-extension=${EXTENSION_PATH}`,
+      ],
+    });
+
+    try {
+      const extensionId = await getExtensionId(context);
+
+      const popupPage = await context.newPage();
+      await popupPage.goto(`chrome-extension://${extensionId}/dist/popup.html`);
+      await popupPage.locator('#ws-url').fill('ws://localhost:8095');
+      await popupPage.locator('#save-url-btn').click();
+      await popupPage.locator('#connect-btn').click();
+      await mockServer.waitForConnection(5000);
+
+      const testPage = await context.newPage();
+      await testPage.goto(`file://${TEST_PAGE_PATH}`);
+      await testPage.bringToFront();
+
+      // Snapshot
+      const snapResp = await mockServer.sendCommandAndWaitForResponse({
+        id: 'press-snap',
+        type: 'snapshot',
+      });
+      const snapshot = (snapResp as { data?: { snapshot: string } }).data?.snapshot || '';
+
+      // Find key input ref
+      const inputMatch = snapshot.match(/textbox "Key input" \[ref=(e\d+)\]/);
+      expect(inputMatch).toBeTruthy();
+      const ref = inputMatch![1];
+
+      // Press Enter key
+      const pressResp = await mockServer.sendCommandAndWaitForResponse({
+        id: 'press-1',
+        type: 'press',
+        params: { key: 'Enter', ref },
+      });
+
+      expect((pressResp as any).success).toBe(true);
+      await expect(testPage.locator('#key-result')).toHaveText('Key pressed: Enter');
+    } finally {
+      await context.close();
+      await mockServer.stop();
+      fs.rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// =============================================================================
+// SCROLL COMMAND TESTS
+// =============================================================================
+
+test.describe('Scroll Command', () => {
+  test('scrolls page down', async () => {
+    const mockServer = new MockWebSocketServer({ port: 8096 });
+    await mockServer.start();
+
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-ext-'));
+    const context = await chromium.launchPersistentContext(userDataDir, {
+      headless: false,
+      args: [
+        `--disable-extensions-except=${EXTENSION_PATH}`,
+        `--load-extension=${EXTENSION_PATH}`,
+      ],
+    });
+
+    try {
+      const extensionId = await getExtensionId(context);
+
+      const popupPage = await context.newPage();
+      await popupPage.goto(`chrome-extension://${extensionId}/dist/popup.html`);
+      await popupPage.locator('#ws-url').fill('ws://localhost:8096');
+      await popupPage.locator('#save-url-btn').click();
+      await popupPage.locator('#connect-btn').click();
+      await mockServer.waitForConnection(5000);
+
+      const testPage = await context.newPage();
+      await testPage.goto(`file://${TEST_PAGE_PATH}`);
+      await testPage.bringToFront();
+
+      // Get initial scroll position
+      const initialScroll = await testPage.evaluate(() => window.scrollY);
+
+      // Snapshot first (required for consistency)
+      await mockServer.sendCommandAndWaitForResponse({
+        id: 'scroll-snap',
+        type: 'snapshot',
+      });
+
+      // Scroll down
+      const scrollResp = await mockServer.sendCommandAndWaitForResponse({
+        id: 'scroll-1',
+        type: 'scroll',
+        params: { direction: 'down', pixels: 200 },
+      });
+
+      expect((scrollResp as any).success).toBe(true);
+
+      // Wait for smooth scroll to complete
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Verify scroll happened
+      const finalScroll = await testPage.evaluate(() => window.scrollY);
+      expect(finalScroll).toBeGreaterThan(initialScroll);
+    } finally {
+      await context.close();
+      await mockServer.stop();
+      fs.rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+
+  test('returns error for invalid scroll direction', async () => {
+    const mockServer = new MockWebSocketServer({ port: 8097 });
+    await mockServer.start();
+
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-ext-'));
+    const context = await chromium.launchPersistentContext(userDataDir, {
+      headless: false,
+      args: [
+        `--disable-extensions-except=${EXTENSION_PATH}`,
+        `--load-extension=${EXTENSION_PATH}`,
+      ],
+    });
+
+    try {
+      const extensionId = await getExtensionId(context);
+
+      const popupPage = await context.newPage();
+      await popupPage.goto(`chrome-extension://${extensionId}/dist/popup.html`);
+      await popupPage.locator('#ws-url').fill('ws://localhost:8097');
+      await popupPage.locator('#save-url-btn').click();
+      await popupPage.locator('#connect-btn').click();
+      await mockServer.waitForConnection(5000);
+
+      const testPage = await context.newPage();
+      await testPage.goto(`file://${TEST_PAGE_PATH}`);
+      await testPage.bringToFront();
+
+      // Snapshot first
+      await mockServer.sendCommandAndWaitForResponse({
+        id: 'scroll-snap-2',
+        type: 'snapshot',
+      });
+
+      // Try invalid direction
+      const scrollResp = await mockServer.sendCommandAndWaitForResponse({
+        id: 'scroll-invalid',
+        type: 'scroll',
+        params: { direction: 'diagonal' },
+      });
+
+      expect((scrollResp as any).success).toBe(false);
+      expect((scrollResp as any).error).toContain('Invalid scroll direction');
+    } finally {
+      await context.close();
+      await mockServer.stop();
+      fs.rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// =============================================================================
+// HOVER AND FOCUS COMMAND TESTS
+// =============================================================================
+
+test.describe('Hover and Focus Commands', () => {
+  test('hovers over element', async () => {
+    const mockServer = new MockWebSocketServer({ port: 8098 });
+    await mockServer.start();
+
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-ext-'));
+    const context = await chromium.launchPersistentContext(userDataDir, {
+      headless: false,
+      args: [
+        `--disable-extensions-except=${EXTENSION_PATH}`,
+        `--load-extension=${EXTENSION_PATH}`,
+      ],
+    });
+
+    try {
+      const extensionId = await getExtensionId(context);
+
+      const popupPage = await context.newPage();
+      await popupPage.goto(`chrome-extension://${extensionId}/dist/popup.html`);
+      await popupPage.locator('#ws-url').fill('ws://localhost:8098');
+      await popupPage.locator('#save-url-btn').click();
+      await popupPage.locator('#connect-btn').click();
+      await mockServer.waitForConnection(5000);
+
+      const testPage = await context.newPage();
+      await testPage.goto(`file://${TEST_PAGE_PATH}`);
+      await testPage.bringToFront();
+
+      // Snapshot
+      const snapResp = await mockServer.sendCommandAndWaitForResponse({
+        id: 'hover-snap',
+        type: 'snapshot',
+      });
+      const snapshot = (snapResp as { data?: { snapshot: string } }).data?.snapshot || '';
+
+      // Find hover button ref
+      const btnMatch = snapshot.match(/button "Hover Over Me" \[ref=(e\d+)\]/);
+      expect(btnMatch).toBeTruthy();
+      const ref = btnMatch![1];
+
+      // Hover
+      const hoverResp = await mockServer.sendCommandAndWaitForResponse({
+        id: 'hover-1',
+        type: 'hover',
+        params: { ref },
+      });
+
+      expect((hoverResp as any).success).toBe(true);
+      await expect(testPage.locator('#hover-result')).toHaveText('Hovered!');
+    } finally {
+      await context.close();
+      await mockServer.stop();
+      fs.rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+
+  test('focuses on element', async () => {
+    const mockServer = new MockWebSocketServer({ port: 8099 });
+    await mockServer.start();
+
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-ext-'));
+    const context = await chromium.launchPersistentContext(userDataDir, {
+      headless: false,
+      args: [
+        `--disable-extensions-except=${EXTENSION_PATH}`,
+        `--load-extension=${EXTENSION_PATH}`,
+      ],
+    });
+
+    try {
+      const extensionId = await getExtensionId(context);
+
+      const popupPage = await context.newPage();
+      await popupPage.goto(`chrome-extension://${extensionId}/dist/popup.html`);
+      await popupPage.locator('#ws-url').fill('ws://localhost:8099');
+      await popupPage.locator('#save-url-btn').click();
+      await popupPage.locator('#connect-btn').click();
+      await mockServer.waitForConnection(5000);
+
+      const testPage = await context.newPage();
+      await testPage.goto(`file://${TEST_PAGE_PATH}`);
+      await testPage.bringToFront();
+
+      // Snapshot
+      const snapResp = await mockServer.sendCommandAndWaitForResponse({
+        id: 'focus-snap',
+        type: 'snapshot',
+      });
+      const snapshot = (snapResp as { data?: { snapshot: string } }).data?.snapshot || '';
+
+      // Find focus input ref
+      const inputMatch = snapshot.match(/textbox "Focus input" \[ref=(e\d+)\]/);
+      expect(inputMatch).toBeTruthy();
+      const ref = inputMatch![1];
+
+      // Focus
+      const focusResp = await mockServer.sendCommandAndWaitForResponse({
+        id: 'focus-1',
+        type: 'focus',
+        params: { ref },
+      });
+
+      expect((focusResp as any).success).toBe(true);
+      await expect(testPage.locator('#focus-result')).toHaveText('Focused!');
+    } finally {
+      await context.close();
+      await mockServer.stop();
+      fs.rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// =============================================================================
+// WAIT COMMAND TESTS
+// =============================================================================
+
+test.describe('Wait Command', () => {
+  test('waits for specified time', async () => {
+    const mockServer = new MockWebSocketServer({ port: 8100 });
+    await mockServer.start();
+
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-ext-'));
+    const context = await chromium.launchPersistentContext(userDataDir, {
+      headless: false,
+      args: [
+        `--disable-extensions-except=${EXTENSION_PATH}`,
+        `--load-extension=${EXTENSION_PATH}`,
+      ],
+    });
+
+    try {
+      const extensionId = await getExtensionId(context);
+
+      const popupPage = await context.newPage();
+      await popupPage.goto(`chrome-extension://${extensionId}/dist/popup.html`);
+      await popupPage.locator('#ws-url').fill('ws://localhost:8100');
+      await popupPage.locator('#save-url-btn').click();
+      await popupPage.locator('#connect-btn').click();
+      await mockServer.waitForConnection(5000);
+
+      const testPage = await context.newPage();
+      await testPage.goto(`file://${TEST_PAGE_PATH}`);
+      await testPage.bringToFront();
+
+      // Snapshot first
+      await mockServer.sendCommandAndWaitForResponse({
+        id: 'wait-snap',
+        type: 'snapshot',
+      });
+
+      const startTime = Date.now();
+
+      // Wait for 500ms
+      const waitResp = await mockServer.sendCommandAndWaitForResponse({
+        id: 'wait-1',
+        type: 'wait',
+        params: { ms: 500 },
+      });
+
+      const elapsed = Date.now() - startTime;
+
+      expect((waitResp as any).success).toBe(true);
+      expect(elapsed).toBeGreaterThanOrEqual(450); // Allow some margin
+    } finally {
+      await context.close();
+      await mockServer.stop();
+      fs.rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+
+  test('waits for selector to appear', async () => {
+    const mockServer = new MockWebSocketServer({ port: 8101 });
+    await mockServer.start();
+
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-ext-'));
+    const context = await chromium.launchPersistentContext(userDataDir, {
+      headless: false,
+      args: [
+        `--disable-extensions-except=${EXTENSION_PATH}`,
+        `--load-extension=${EXTENSION_PATH}`,
+      ],
+    });
+
+    try {
+      const extensionId = await getExtensionId(context);
+
+      const popupPage = await context.newPage();
+      await popupPage.goto(`chrome-extension://${extensionId}/dist/popup.html`);
+      await popupPage.locator('#ws-url').fill('ws://localhost:8101');
+      await popupPage.locator('#save-url-btn').click();
+      await popupPage.locator('#connect-btn').click();
+      await mockServer.waitForConnection(5000);
+
+      const testPage = await context.newPage();
+      await testPage.goto(`file://${TEST_PAGE_PATH}`);
+      await testPage.bringToFront();
+
+      // Snapshot and find the button to trigger delayed element
+      const snapResp = await mockServer.sendCommandAndWaitForResponse({
+        id: 'wait-snap-2',
+        type: 'snapshot',
+      });
+      const snapshot = (snapResp as { data?: { snapshot: string } }).data?.snapshot || '';
+
+      const btnMatch = snapshot.match(/button "Show Element After Delay" \[ref=(e\d+)\]/);
+      expect(btnMatch).toBeTruthy();
+
+      // Click the button to trigger delayed element appearance
+      await mockServer.sendCommandAndWaitForResponse({
+        id: 'wait-click',
+        type: 'click',
+        params: { ref: btnMatch![1] },
+      });
+
+      // Wait for the delayed element to appear
+      const waitResp = await mockServer.sendCommandAndWaitForResponse({
+        id: 'wait-selector',
+        type: 'wait',
+        params: { selector: '#delayed-element:not([style*="display: none"])' },
+      }, 15000);
+
+      expect((waitResp as any).success).toBe(true);
+      await expect(testPage.locator('#delayed-element')).toBeVisible();
+    } finally {
+      await context.close();
+      await mockServer.stop();
+      fs.rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// =============================================================================
+// SCROLLINTOVIEW COMMAND TESTS
+// =============================================================================
+
+test.describe('ScrollIntoView Command', () => {
+  test('scrolls element into view', async () => {
+    const mockServer = new MockWebSocketServer({ port: 8102 });
+    await mockServer.start();
+
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-ext-'));
+    const context = await chromium.launchPersistentContext(userDataDir, {
+      headless: false,
+      args: [
+        `--disable-extensions-except=${EXTENSION_PATH}`,
+        `--load-extension=${EXTENSION_PATH}`,
+      ],
+    });
+
+    try {
+      const extensionId = await getExtensionId(context);
+
+      const popupPage = await context.newPage();
+      await popupPage.goto(`chrome-extension://${extensionId}/dist/popup.html`);
+      await popupPage.locator('#ws-url').fill('ws://localhost:8102');
+      await popupPage.locator('#save-url-btn').click();
+      await popupPage.locator('#connect-btn').click();
+      await mockServer.waitForConnection(5000);
+
+      const testPage = await context.newPage();
+      await testPage.goto(`file://${TEST_PAGE_PATH}`);
+      await testPage.bringToFront();
+
+      // Snapshot
+      const snapResp = await mockServer.sendCommandAndWaitForResponse({
+        id: 'scrollinto-snap',
+        type: 'snapshot',
+      });
+      const snapshot = (snapResp as { data?: { snapshot: string } }).data?.snapshot || '';
+
+      // Find below-fold button ref
+      const btnMatch = snapshot.match(/button "Below Fold Button" \[ref=(e\d+)\]/);
+      expect(btnMatch).toBeTruthy();
+      const ref = btnMatch![1];
+
+      // Scroll into view
+      const scrollResp = await mockServer.sendCommandAndWaitForResponse({
+        id: 'scrollinto-1',
+        type: 'scrollintoview',
+        params: { ref },
+      });
+
+      expect((scrollResp as any).success).toBe(true);
+
+      // Wait for scroll animation
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Verify element is now in viewport
+      const isVisible = await testPage.evaluate(() => {
+        const el = document.getElementById('below-fold-button');
+        if (!el) return false;
+        const rect = el.getBoundingClientRect();
+        return rect.top >= 0 && rect.bottom <= window.innerHeight;
+      });
+      expect(isVisible).toBe(true);
+    } finally {
+      await context.close();
+      await mockServer.stop();
+      fs.rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// =============================================================================
+// SCREENSHOT COMMAND TESTS
+// =============================================================================
+
+test.describe('Screenshot Command', () => {
+  test('captures screenshot', async () => {
+    const mockServer = new MockWebSocketServer({ port: 8103 });
+    await mockServer.start();
+
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-ext-'));
+    const context = await chromium.launchPersistentContext(userDataDir, {
+      headless: false,
+      args: [
+        `--disable-extensions-except=${EXTENSION_PATH}`,
+        `--load-extension=${EXTENSION_PATH}`,
+      ],
+    });
+
+    try {
+      const extensionId = await getExtensionId(context);
+
+      const popupPage = await context.newPage();
+      await popupPage.goto(`chrome-extension://${extensionId}/dist/popup.html`);
+      await popupPage.locator('#ws-url').fill('ws://localhost:8103');
+      await popupPage.locator('#save-url-btn').click();
+      await popupPage.locator('#connect-btn').click();
+      await mockServer.waitForConnection(5000);
+
+      const testPage = await context.newPage();
+      await testPage.goto(`file://${TEST_PAGE_PATH}`);
+      await testPage.bringToFront();
+
+      // Take screenshot
+      const screenshotResp = await mockServer.sendCommandAndWaitForResponse({
+        id: 'screenshot-1',
+        type: 'screenshot',
+      });
+
+      const result = screenshotResp as { success: boolean; data?: { screenshot: string } };
+      expect(result.success).toBe(true);
+      expect(result.data?.screenshot).toMatch(/^data:image\/png;base64,/);
+    } finally {
+      await context.close();
+      await mockServer.stop();
+      fs.rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// =============================================================================
+// ERROR HANDLING TESTS
+// =============================================================================
+
+test.describe('Error Handling', () => {
+  test('returns error when no snapshot taken', async () => {
+    const mockServer = new MockWebSocketServer({ port: 8104 });
+    await mockServer.start();
+
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-ext-'));
+    const context = await chromium.launchPersistentContext(userDataDir, {
+      headless: false,
+      args: [
+        `--disable-extensions-except=${EXTENSION_PATH}`,
+        `--load-extension=${EXTENSION_PATH}`,
+      ],
+    });
+
+    try {
+      const extensionId = await getExtensionId(context);
+
+      const popupPage = await context.newPage();
+      await popupPage.goto(`chrome-extension://${extensionId}/dist/popup.html`);
+      await popupPage.locator('#ws-url').fill('ws://localhost:8104');
+      await popupPage.locator('#save-url-btn').click();
+      await popupPage.locator('#connect-btn').click();
+      await mockServer.waitForConnection(5000);
+
+      const testPage = await context.newPage();
+      await testPage.goto(`file://${TEST_PAGE_PATH}`);
+      await testPage.bringToFront();
+
+      // Force reload to clear any existing registry
+      await testPage.reload();
+      await testPage.waitForLoadState('load');
+
+      // Try to click without snapshot - should fail
+      const clickResp = await mockServer.sendCommandAndWaitForResponse({
+        id: 'no-snap-click',
+        type: 'click',
+        params: { ref: 'e1' },
+      });
+
+      const result = clickResp as { success: boolean; error?: string };
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('No active snapshot');
+    } finally {
+      await context.close();
+      await mockServer.stop();
+      fs.rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+
+  test('returns error for wait without parameters', async () => {
+    const mockServer = new MockWebSocketServer({ port: 8105 });
+    await mockServer.start();
+
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-ext-'));
+    const context = await chromium.launchPersistentContext(userDataDir, {
+      headless: false,
+      args: [
+        `--disable-extensions-except=${EXTENSION_PATH}`,
+        `--load-extension=${EXTENSION_PATH}`,
+      ],
+    });
+
+    try {
+      const extensionId = await getExtensionId(context);
+
+      const popupPage = await context.newPage();
+      await popupPage.goto(`chrome-extension://${extensionId}/dist/popup.html`);
+      await popupPage.locator('#ws-url').fill('ws://localhost:8105');
+      await popupPage.locator('#save-url-btn').click();
+      await popupPage.locator('#connect-btn').click();
+      await mockServer.waitForConnection(5000);
+
+      const testPage = await context.newPage();
+      await testPage.goto(`file://${TEST_PAGE_PATH}`);
+      await testPage.bringToFront();
+
+      // Snapshot first
+      await mockServer.sendCommandAndWaitForResponse({
+        id: 'wait-err-snap',
+        type: 'snapshot',
+      });
+
+      // Try wait without any parameters
+      const waitResp = await mockServer.sendCommandAndWaitForResponse({
+        id: 'wait-no-params',
+        type: 'wait',
+        params: {},
+      });
+
+      const result = waitResp as { success: boolean; error?: string };
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('wait requires at least one parameter');
+    } finally {
+      await context.close();
+      await mockServer.stop();
+      fs.rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// =============================================================================
 // HELPERS
 // =============================================================================
 

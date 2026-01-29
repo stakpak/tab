@@ -1,0 +1,314 @@
+/**
+ * Type definitions for tab-daemon
+ *
+ * This module defines all shared types used across the daemon.
+ */
+
+import type { WebSocket } from "ws";
+import type { ChildProcess } from "node:child_process";
+
+// =============================================================================
+// Session Types
+// =============================================================================
+
+/**
+ * Represents a unique session identifier
+ */
+export type SessionId = string;
+
+/**
+ * Session state enumeration
+ */
+export type SessionState = "active" | "disconnected" | "pending" | "awaiting_extension";
+
+/**
+ * A session represents a persistent browser context.
+ * Sessions are logical routing identifiers - they do NOT map to browser profiles.
+ */
+export interface Session {
+  id: SessionId;
+  name: string;
+  state: SessionState;
+  createdAt: Date;
+  extensionConnection: WebSocket | null;
+  browserProcess: ChildProcess | null;
+}
+
+// =============================================================================
+// Command Types
+// =============================================================================
+
+/**
+ * Unique identifier for a command request
+ */
+export type CommandId = string;
+
+/**
+ * All supported command types
+ * These map to extension command types (some have transformations)
+ */
+export type CommandType =
+  // Navigation commands
+  | "navigate"  // Maps to "open" in extension
+  | "open"      // Direct open command
+  | "back"
+  | "forward"
+  | "reload"
+  | "close"
+  // Snapshot
+  | "snapshot"
+  // Element interactions
+  | "click"
+  | "dblclick"
+  | "fill"
+  | "type"
+  | "press"
+  | "hover"
+  | "focus"
+  | "check"
+  | "uncheck"
+  | "select"
+  // Scroll
+  | "scroll"
+  | "scrollintoview"
+  // Element queries
+  | "get"
+  | "is"
+  | "find"
+  // Advanced interactions
+  | "drag"
+  | "upload"
+  | "mouse"
+  | "wait"
+  // Tab management (mapped to "tab" with action param)
+  | "tab"
+  | "tab_new"
+  | "tab_close"
+  | "tab_switch"
+  | "tab_list"
+  // Capture
+  | "screenshot"
+  | "pdf"
+  // Script execution
+  | "eval";
+
+/**
+ * Command sent from CLI to daemon
+ */
+export interface Command {
+  id: CommandId;
+  sessionId: SessionId;
+  type: CommandType;
+  params?: Record<string, unknown>;
+  timestamp: Date;
+}
+
+/**
+ * Command forwarded from daemon to extension
+ * Uses 'params' per protocol specification (not 'payload')
+ */
+export interface ExtensionCommand {
+  id: CommandId;
+  type: string;  // Allow any string type for extension commands
+  params?: Record<string, unknown>;
+}
+
+/**
+ * Response from extension back to daemon
+ */
+export interface ExtensionResponse {
+  id: CommandId;
+  success: boolean;
+  data?: unknown;
+  error?: string;
+}
+
+/**
+ * Response from daemon back to CLI
+ */
+export interface CommandResponse {
+  id: CommandId;
+  success: boolean;
+  data?: unknown;
+  error?: string;
+}
+
+// =============================================================================
+// IPC Types (CLI <-> Daemon)
+// =============================================================================
+
+/**
+ * Message types for IPC communication
+ */
+export type IpcMessageType = "command" | "response" | "ping" | "pong" | "get_endpoint" | "endpoint" | "register_extension" | "registration";
+
+/**
+ * IPC message envelope
+ */
+export interface IpcMessage {
+  type: IpcMessageType;
+  payload: Command | CommandResponse | BrowserEndpoint | ExtensionRegistrationResponse | null;
+}
+
+/**
+ * Response to extension registration request
+ */
+export interface ExtensionRegistrationResponse {
+  sessionId: SessionId;
+  ip: string;
+  port: number;
+}
+
+// =============================================================================
+// WebSocket Types (Daemon <-> Extension)
+// =============================================================================
+
+/**
+ * Message types for WebSocket communication
+ */
+export type WsMessageType =
+  | "command"
+  | "response"
+  | "heartbeat"
+  | "heartbeat_ack"
+  | "register"
+  | "ping"
+  | "pong";
+
+/**
+ * WebSocket message envelope
+ */
+export interface WsMessage {
+  type: WsMessageType;
+  sessionId?: SessionId;
+  payload: ExtensionCommand | ExtensionResponse | null;
+}
+
+/**
+ * Extension registration payload
+ */
+export interface ExtensionRegistration {
+  sessionId: SessionId;
+  extensionVersion: string;
+  browserInfo: {
+    name: string;
+    version: string;
+  };
+}
+
+// =============================================================================
+// Browser Types
+// =============================================================================
+
+/**
+ * Browser launch options
+ */
+export interface BrowserLaunchOptions {
+  sessionId: SessionId;
+  executablePath?: string;
+  userDataDir?: string;
+  args?: string[];
+}
+
+/**
+ * Browser process info
+ */
+export interface BrowserProcessInfo {
+  pid: number;
+  sessionId: SessionId;
+  launchedAt: Date;
+}
+
+// =============================================================================
+// Daemon Configuration
+// =============================================================================
+
+/**
+ * Daemon configuration options
+ */
+export interface DaemonConfig {
+  ipcSocketPath: string;
+  wsPort: number;
+  heartbeatInterval: number;
+  heartbeatTimeout: number;
+  defaultBrowserPath?: string;
+}
+
+/**
+ * Default daemon configuration
+ */
+export const DEFAULT_CONFIG: DaemonConfig = {
+  ipcSocketPath: "/tmp/tab-daemon.sock",
+  wsPort: 9222,
+  heartbeatInterval: 30000,
+  heartbeatTimeout: 10000,
+};
+
+// =============================================================================
+// Error Types
+// =============================================================================
+
+/**
+ * Daemon error codes
+ */
+export type DaemonErrorCode =
+  | "SESSION_NOT_FOUND"
+  | "SESSION_DISCONNECTED"
+  | "COMMAND_TIMEOUT"
+  | "EXTENSION_NOT_CONNECTED"
+  | "BROWSER_LAUNCH_FAILED"
+  | "INVALID_COMMAND"
+  | "INTERNAL_ERROR";
+
+/**
+ * Structured daemon error
+ */
+export class DaemonError extends Error {
+  constructor(
+    public code: DaemonErrorCode,
+    message: string
+  ) {
+    super(message);
+    this.name = "DaemonError";
+  }
+}
+
+// =============================================================================
+// Native Messaging Types (Extension <-> Daemon bootstrap)
+// =============================================================================
+
+/**
+ * Native messaging request type
+ */
+export type NativeMessageType = "get_browser_endpoint" | "register_extension";
+
+/**
+ * Request from extension to daemon via native messaging
+ */
+export interface NativeMessageRequest {
+  type: NativeMessageType;
+}
+
+/**
+ * Response from daemon to extension via native messaging
+ */
+export interface NativeMessageResponse {
+  ip: string;
+  port: number;
+  sessionId?: string;
+}
+
+/**
+ * Error response from daemon via native messaging
+ */
+export interface NativeMessageErrorResponse {
+  error: string;
+}
+
+/**
+ * Cached browser endpoint in extension storage
+ */
+export interface BrowserEndpoint {
+  ip: string;
+  port: number;
+}

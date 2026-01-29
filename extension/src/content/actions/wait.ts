@@ -14,6 +14,10 @@ import { isElementVisible } from './utils';
 export async function wait(params: WaitParams, registry: RefRegistry): Promise<void> {
     const { ms, ref, selector } = params;
 
+    if (!ms && !ref && !selector) {
+        throw new Error('wait requires at least one parameter: ms, ref, or selector');
+    }
+
     if (ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
@@ -30,11 +34,15 @@ export async function wait(params: WaitParams, registry: RefRegistry): Promise<v
         return new Promise((resolve, reject) => {
             const start = Date.now();
             const timeout = 10000; // 10s default
+            let stopped = false;
 
             const check = () => {
+                if (stopped) return;
                 if (isElementVisible(element)) {
+                    stopped = true;
                     resolve();
                 } else if (Date.now() - start > timeout) {
+                    stopped = true;
                     reject(new Error(`Timeout waiting for element ${ref} to become visible`));
                 } else {
                     setTimeout(check, 100);
@@ -48,12 +56,16 @@ export async function wait(params: WaitParams, registry: RefRegistry): Promise<v
         return new Promise((resolve, reject) => {
             const start = Date.now();
             const timeout = 10000;
+            let stopped = false;
 
             const check = () => {
+                if (stopped) return;
                 const element = document.querySelector(selector);
                 if (element && isElementVisible(element)) {
+                    stopped = true;
                     resolve();
                 } else if (Date.now() - start > timeout) {
+                    stopped = true;
                     reject(new Error(`Timeout waiting for selector "${selector}" to appear and be visible`));
                 } else {
                     setTimeout(check, 100);

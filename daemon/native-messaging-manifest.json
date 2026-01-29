@@ -1,0 +1,9 @@
+{
+  "name": "com.stakpak.tab_daemon",
+  "description": "Tab Daemon Native Messaging Host for browser endpoint discovery",
+  "path": "/usr/local/bin/tab-daemon-native-host",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://EXTENSION_ID_PLACEHOLDER/"
+  ]
+}

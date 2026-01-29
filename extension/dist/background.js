@@ -5,12 +5,12 @@ var DEFAULT_CONFIG = {
   maxReconnectAttempts: 10,
   heartbeatInterval: 3e4,
   // Send ping every 30 seconds
-  heartbeatTimeout: 5e3
-  // Wait 5 seconds for pong
+  heartbeatTimeout: 1e4
+  // Wait 10 seconds for pong (aligned with daemon)
 };
 
 // src/background/websocket.ts
-function createWebSocketManager(config2, onCommand, callbacks) {
+function createWebSocketManager(config2, windowId, onCommand, callbacks) {
   let ws = null;
   let state = "DISCONNECTED" /* DISCONNECTED */;
   let reconnectAttempts = 0;
@@ -90,13 +90,14 @@ function createWebSocketManager(config2, onCommand, callbacks) {
       }
       setState("CONNECTING" /* CONNECTING */);
       shouldReconnect = true;
-      console.log("[WebSocket] Connecting to", config2.websocketUrl);
+      const wsUrl = `${config2.websocketUrl}/ws/session/${windowId}`;
+      console.log(`[WebSocket:${windowId}] Connecting to`, wsUrl);
       try {
-        ws = new WebSocket(config2.websocketUrl);
+        ws = new WebSocket(wsUrl);
         ws.onopen = () => {
           setState("CONNECTED" /* CONNECTED */);
           reconnectAttempts = 0;
-          console.log("[WebSocket] Connected");
+          console.log(`[WebSocket:${windowId}] Connected`);
           startHeartbeat();
         };
         ws.onmessage = async (event) => {
@@ -117,34 +118,42 @@ function createWebSocketManager(config2, onCommand, callbacks) {
             console.error("[WebSocket] Invalid command format:", event.data);
             return;
           }
-          console.log("[WebSocket] Received command:", command.id);
+          console.log(`[WebSocket:${windowId}] Received command:`, command.id);
           try {
-            const response = await onCommand(command);
-            manager.send(response);
+            const response = await onCommand(command, windowId);
+            try {
+              manager.send(response);
+            } catch (sendError) {
+              console.error("[WebSocket] Failed to send response:", sendError);
+            }
           } catch (error) {
             console.error("[WebSocket] Command handler error:", error);
-            manager.send({
-              id: command.id,
-              success: false,
-              error: error instanceof Error ? error.message : "Unknown error"
-            });
+            try {
+              manager.send({
+                id: command.id,
+                success: false,
+                error: error instanceof Error ? error.message : "Unknown error"
+              });
+            } catch (sendError) {
+              console.error("[WebSocket] Failed to send error response:", sendError);
+            }
           }
         };
         ws.onerror = (error) => {
-          console.error("[WebSocket] Error:", error);
+          console.error(`[WebSocket:${windowId}] Error:`, error);
         };
         ws.onclose = () => {
           setState("DISCONNECTED" /* DISCONNECTED */);
           ws = null;
           stopHeartbeat();
-          console.log("[WebSocket] Disconnected");
+          console.log(`[WebSocket:${windowId}] Disconnected`);
           if (shouldReconnect) {
             manager.attemptReconnect();
           }
         };
       } catch (error) {
         setState("DISCONNECTED" /* DISCONNECTED */);
-        console.error("[WebSocket] Connection failed:", error);
+        console.error(`[WebSocket:${windowId}] Connection failed:`, error);
         manager.attemptReconnect();
       }
     },
@@ -161,17 +170,17 @@ function createWebSocketManager(config2, onCommand, callbacks) {
         ws = null;
       }
       setState("DISCONNECTED" /* DISCONNECTED */);
-      console.log("[WebSocket] Disconnected");
+      console.log(`[WebSocket:${windowId}] Disconnected`);
     },
     send(response) {
       if (!ws || ws.readyState !== WebSocket.OPEN) {
-        console.error("[WebSocket] Cannot send: not connected");
+        console.error(`[WebSocket:${windowId}] Cannot send: not connected`);
         return;
       }
       try {
         ws.send(JSON.stringify(response));
       } catch (error) {
-        console.error("[WebSocket] Send error:", error);
+        console.error(`[WebSocket:${windowId}] Send error:`, error);
       }
     },
     isConnected() {
@@ -186,6 +195,7 @@ function createWebSocketManager(config2, onCommand, callbacks) {
     attemptReconnect() {
       if (reconnectAttempts >= config2.maxReconnectAttempts) {
         console.error("[WebSocket] Max reconnection attempts reached");
+        callbacks?.onMaxReconnectAttemptsReached?.();
         return;
       }
       if (state === "CONNECTING" /* CONNECTING */ || state === "CONNECTED" /* CONNECTED */) {
@@ -277,9 +287,15 @@ function validateCommand(obj) {
 }
 
 // src/background/router.ts
-var lastTargetTabId = null;
-async function routeCommand(command) {
-  const tab = await getTargetTab(command.type);
+var lastTargetTabIds = /* @__PURE__ */ new Map();
+function clearTargetTabIfMatch(tabId, windowId) {
+  const lastTabId = lastTargetTabIds.get(windowId);
+  if (lastTabId === tabId) {
+    lastTargetTabIds.delete(windowId);
+  }
+}
+async function routeCommand(command, windowId) {
+  const tab = await getTargetTab(command.type, windowId);
   if (!tab) {
     return {
       id: command.id,
@@ -302,7 +318,7 @@ async function routeCommand(command) {
     };
   }
   if (command.type === "snapshot") {
-    lastTargetTabId = tab.id;
+    lastTargetTabIds.set(windowId, tab.id);
   }
   if (command.type === "open") {
     const url = command.params?.url;
@@ -310,7 +326,7 @@ async function routeCommand(command) {
       return { id: command.id, success: false, error: "Missing URL for open command" };
     }
     await chrome.tabs.update(tab.id, { url });
-    lastTargetTabId = tab.id;
+    lastTargetTabIds.set(windowId, tab.id);
     return { id: command.id, success: true, data: { executed: true } };
   }
   if (command.type === "back") {
@@ -330,8 +346,19 @@ async function routeCommand(command) {
     return { id: command.id, success: true, data: { executed: true } };
   }
   if (command.type === "screenshot") {
-    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
-    return { id: command.id, success: true, data: { screenshot: dataUrl } };
+    if (tab.windowId === void 0) {
+      return { id: command.id, success: false, error: "Tab has no associated window" };
+    }
+    try {
+      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+      return { id: command.id, success: true, data: { screenshot: dataUrl } };
+    } catch (error) {
+      return {
+        id: command.id,
+        success: false,
+        error: error instanceof Error ? error.message : "Screenshot capture failed (window may be minimized or not visible)"
+      };
+    }
   }
   if (command.type === "pdf") {
     return new Promise((resolve) => {
@@ -347,7 +374,7 @@ async function routeCommand(command) {
           if (error) {
             resolve({ id: command.id, success: false, error: error.message });
           } else {
-            resolve({ id: command.id, success: true, data: { result: result.data } });
+            resolve({ id: command.id, success: true, data: { pdf: result.data } });
           }
         });
       });
@@ -449,14 +476,15 @@ async function routeCommand(command) {
     };
   }
 }
-async function getActiveTab() {
+async function getActiveTab(windowId) {
   const tabs = await chrome.tabs.query({
     active: true,
-    currentWindow: true
+    windowId
   });
   return tabs[0] || null;
 }
-async function getTargetTab(commandType) {
+async function getTargetTab(commandType, windowId) {
+  const lastTargetTabId = lastTargetTabIds.get(windowId) ?? null;
   if (commandType !== "snapshot" && lastTargetTabId !== null) {
     try {
       const previousTab = await chrome.tabs.get(lastTargetTabId);
@@ -466,32 +494,42 @@ async function getTargetTab(commandType) {
     } catch {
     }
   }
-  return getActiveTab();
+  return getActiveTab(windowId);
 }
 function isValidTabUrl(url) {
   if (url === "about:blank") return true;
   return !url.startsWith("chrome://") && !url.startsWith("chrome-extension://") && !url.startsWith("about:") && !url.startsWith("edge://") && !url.startsWith("moz-extension://") && !url.startsWith("devtools://");
 }
+async function pingContentScript(tabId) {
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tabId, { action: "ping" }, (response) => {
+      if (chrome.runtime.lastError) {
+        resolve(false);
+      } else {
+        resolve(true);
+      }
+    });
+  });
+}
 async function ensureContentScriptInjected(tabId) {
-  try {
-    await new Promise((resolve, reject) => {
-      chrome.tabs.sendMessage(tabId, { action: "ping" }, (response) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-        } else {
-          resolve();
-        }
-      });
-    });
-  } catch {
-    console.log("[Router] Content script not found, injecting...");
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ["dist/content.js"]
-    });
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    console.log("[Router] Content script injected");
+  if (await pingContentScript(tabId)) {
+    return;
   }
+  console.log("[Router] Content script not found, injecting...");
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    files: ["dist/content.js"]
+  });
+  const maxRetries = 5;
+  for (let i = 0; i < maxRetries; i++) {
+    const delay = 100 * Math.pow(2, i);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    if (await pingContentScript(tabId)) {
+      console.log("[Router] Content script injected and responding");
+      return;
+    }
+  }
+  throw new Error("Content script failed to initialize after injection");
 }
 async function sendToContentScript(tabId, request) {
   await ensureContentScriptInjected(tabId);
@@ -513,32 +551,43 @@ async function sendToContentScript(tabId, request) {
 }
 
 // src/background/tabs.ts
-async function handleTabCommand(params) {
-  const { action, url, tabId } = params;
+async function handleTabCommand(params, windowId) {
+  let { action, url, tabId } = params;
   switch (action) {
     case "new": {
-      await chrome.tabs.create({ url });
+      await chrome.tabs.create({ url, windowId });
       return { success: true, data: { executed: true } };
     }
     case "list": {
-      const tabs = await chrome.tabs.query({});
+      const tabs = await chrome.tabs.query({ windowId });
       const tabList = tabs.map((t) => ({
         id: t.id,
         url: t.url,
         title: t.title,
         active: t.active
       }));
-      return { success: true, data: { tabs: tabList } };
+      const activeTabId = await getActiveTabId(windowId);
+      return { success: true, data: { tabs: tabList, activeTabId } };
     }
     case "close": {
-      if (tabId === void 0) throw new Error("tabId required for close action");
+      tabId = tabId ?? await getActiveTabId(windowId);
+      if (tabId === void 0) {
+        throw new Error("No active tab found to close");
+      }
+      const tab = await chrome.tabs.get(tabId);
+      if (tab.windowId !== windowId) {
+        throw new Error("tabId does not belong to the current window");
+      }
       await chrome.tabs.remove(tabId);
       return { success: true, data: { executed: true } };
     }
     case "switch": {
       if (tabId === void 0) throw new Error("tabId required for switch action");
-      await chrome.tabs.update(tabId, { active: true });
       const tab = await chrome.tabs.get(tabId);
+      if (tab.windowId !== windowId) {
+        throw new Error("tabId does not belong to the current window");
+      }
+      await chrome.tabs.update(tabId, { active: true });
       if (tab.windowId) {
         await chrome.windows.update(tab.windowId, { focused: true });
       }
@@ -548,14 +597,137 @@ async function handleTabCommand(params) {
       throw new Error(`Unknown tab action: ${action}`);
   }
 }
+async function getActiveTabId(windowId) {
+  const tabs = await chrome.tabs.query({ windowId, active: true });
+  return tabs[0]?.id;
+}
+
+// src/background/native-messaging.ts
+var NATIVE_HOST_NAME = "com.stakpak.tab_daemon";
+function isNativeMessagingAvailable() {
+  return !!(typeof chrome !== "undefined" && chrome.runtime && typeof chrome.runtime.sendNativeMessage === "function");
+}
+function requestDaemonEndpoint() {
+  return new Promise((resolve, reject) => {
+    if (!isNativeMessagingAvailable()) {
+      reject(new Error("Native messaging is not available"));
+      return;
+    }
+    const request = { type: "get_browser_endpoint" };
+    chrome.runtime.sendNativeMessage(
+      NATIVE_HOST_NAME,
+      request,
+      (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message || "Native messaging failed"));
+          return;
+        }
+        if (!response) {
+          reject(new Error("Empty response from native host"));
+          return;
+        }
+        if ("error" in response) {
+          reject(new Error(response.error));
+          return;
+        }
+        if (typeof response.ip !== "string" || typeof response.port !== "number") {
+          reject(new Error("Invalid response format from native host"));
+          return;
+        }
+        resolve({ ip: response.ip, port: response.port });
+      }
+    );
+  });
+}
+
+// src/background/storage.ts
+var STORAGE_KEY_ENDPOINT = "daemon_endpoint";
+function getCachedEndpoint() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(STORAGE_KEY_ENDPOINT, (result) => {
+      const stored = result[STORAGE_KEY_ENDPOINT];
+      if (stored && typeof stored === "object" && typeof stored.ip === "string" && typeof stored.port === "number") {
+        resolve({ ip: stored.ip, port: stored.port });
+      } else {
+        resolve(null);
+      }
+    });
+  });
+}
+function setCachedEndpoint(endpoint) {
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ [STORAGE_KEY_ENDPOINT]: endpoint }, () => {
+      resolve();
+    });
+  });
+}
+
+// src/background/endpoint-manager.ts
+var MIN_REQUEST_INTERVAL_MS = 5e3;
+function createEndpointManager(callbacks) {
+  let lastRequestTime = 0;
+  let pendingRequest = null;
+  async function fetchFromNativeMessaging() {
+    if (!isNativeMessagingAvailable()) {
+      throw new Error("Native messaging is not available");
+    }
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastRequestTime;
+    if (timeSinceLastRequest < MIN_REQUEST_INTERVAL_MS) {
+      const waitTime = MIN_REQUEST_INTERVAL_MS - timeSinceLastRequest;
+      await new Promise((resolve) => setTimeout(resolve, waitTime));
+    }
+    lastRequestTime = Date.now();
+    const endpoint = await requestDaemonEndpoint();
+    await setCachedEndpoint(endpoint);
+    return endpoint;
+  }
+  const manager = {
+    async getEndpoint() {
+      const cached = await getCachedEndpoint();
+      if (cached) {
+        console.log("[EndpointManager] Using cached endpoint:", cached);
+        callbacks?.onEndpointResolved?.(cached, true);
+        return cached;
+      }
+      console.log("[EndpointManager] Cache miss, requesting via native messaging");
+      return manager.refreshEndpoint();
+    },
+    async refreshEndpoint() {
+      if (pendingRequest) {
+        console.log("[EndpointManager] Returning pending request");
+        return pendingRequest;
+      }
+      try {
+        pendingRequest = fetchFromNativeMessaging();
+        const endpoint = await pendingRequest;
+        console.log("[EndpointManager] Got endpoint via native messaging:", endpoint);
+        callbacks?.onEndpointResolved?.(endpoint, false);
+        return endpoint;
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        console.error("[EndpointManager] Failed to get endpoint:", err.message);
+        callbacks?.onEndpointError?.(err);
+        throw err;
+      } finally {
+        pendingRequest = null;
+      }
+    },
+    buildWebSocketUrl(endpoint) {
+      return `ws://${endpoint.ip}:${endpoint.port}`;
+    }
+  };
+  return manager;
+}
 
 // src/background/index.ts
-var wsManager = null;
+var wsManagers = /* @__PURE__ */ new Map();
 var config = { ...DEFAULT_CONFIG };
 var activityLog = [];
 var MAX_LOG_ENTRIES = 100;
-function createManager() {
-  wsManager = createWebSocketManager(config, handleCommand, {
+var endpointManager = null;
+function createManager(windowId) {
+  const manager = createWebSocketManager(config, windowId, handleCommand, {
     onStateChange: (state) => {
       const stateMap = {
         ["CONNECTED" /* CONNECTED */]: "CONNECTED",
@@ -563,38 +735,97 @@ function createManager() {
         ["DISCONNECTED" /* DISCONNECTED */]: "DISCONNECTED"
       };
       const status = stateMap[state];
-      addLogEntry("connection", `Status: ${status.toLowerCase()}`);
+      addLogEntry("connection", `Window ${windowId}: ${status.toLowerCase()}`);
       broadcastStatusUpdate();
+    },
+    onMaxReconnectAttemptsReached: () => {
+      addLogEntry("error", `Window ${windowId}: Max reconnect attempts reached`);
+      void refreshEndpointAndReconnect(windowId);
     }
   });
+  wsManagers.set(windowId, manager);
+  return manager;
 }
-function initWebSocket() {
-  if (!wsManager) {
-    createManager();
+function getOrCreateManager(windowId) {
+  return wsManagers.get(windowId) ?? createManager(windowId);
+}
+async function refreshEndpointAndReconnect(windowId) {
+  if (!endpointManager) {
+    console.warn("[Background] No endpoint manager, cannot refresh");
+    return;
   }
-  wsManager.connect();
+  try {
+    addLogEntry("connection", "Refreshing daemon endpoint...");
+    const endpoint = await endpointManager.refreshEndpoint();
+    const newUrl = endpointManager.buildWebSocketUrl(endpoint);
+    if (newUrl !== config.websocketUrl) {
+      config.websocketUrl = newUrl;
+      addLogEntry("connection", `Endpoint updated: ${newUrl}`);
+      const oldManager = wsManagers.get(windowId);
+      if (oldManager) {
+        oldManager.disconnect();
+        wsManagers.delete(windowId);
+      }
+      const newManager = createManager(windowId);
+      newManager.connect();
+    } else {
+      addLogEntry("connection", "Endpoint unchanged, not reconnecting");
+    }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    addLogEntry("error", `Endpoint refresh failed: ${msg}`);
+  }
 }
-async function handleCommand(command) {
-  console.log("[Background] Received command:", command.id, command.type);
-  addLogEntry("command", `${command.type} (${command.id.slice(0, 8)}...)`);
+async function initWebSocket() {
+  if (!endpointManager && isNativeMessagingAvailable()) {
+    endpointManager = createEndpointManager({
+      onEndpointResolved: (endpoint, fromCache) => {
+        const source = fromCache ? "cache" : "native messaging";
+        addLogEntry("connection", `Endpoint resolved from ${source}: ${endpoint.ip}:${endpoint.port}`);
+      },
+      onEndpointError: (error) => {
+        addLogEntry("error", `Endpoint discovery failed: ${error.message}`);
+      }
+    });
+  }
+  if (endpointManager) {
+    try {
+      const endpoint = await endpointManager.getEndpoint();
+      config.websocketUrl = endpointManager.buildWebSocketUrl(endpoint);
+      console.log("[Background] Using daemon endpoint:", config.websocketUrl);
+    } catch (error) {
+      console.warn("[Background] Failed to get daemon endpoint, using default:", error);
+      addLogEntry("error", "Using default endpoint - native messaging failed");
+    }
+  }
+  const windows = await chrome.windows.getAll();
+  windows.forEach((window2) => {
+    if (window2.id === void 0) return;
+    const manager = getOrCreateManager(window2.id);
+    manager.connect();
+  });
+}
+async function handleCommand(command, windowId) {
+  console.log(`[Background:${windowId}] Received command:`, command.id, command.type);
+  addLogEntry("command", `Window ${windowId}: ${command.type} (${command.id.slice(0, 8)}...)`);
   try {
     let response;
     if (command.type === "tab") {
-      const result = await handleTabCommand(command.params);
+      const result = await handleTabCommand(command.params, windowId);
       response = {
         id: command.id,
         ...result
       };
     } else {
-      response = await routeCommand(command);
+      response = await routeCommand(command, windowId);
     }
-    console.log("[Background] Command completed:", command.id);
-    addLogEntry("response", `${command.type} ${response.success ? "success" : "failed"}`);
+    console.log(`[Background:${windowId}] Command completed:`, command.id);
+    addLogEntry("response", `Window ${windowId}: ${command.type} ${response.success ? "success" : "failed"}`);
     return response;
   } catch (error) {
-    console.error("[Background] Command failed:", command.id, error);
+    console.error(`[Background:${windowId}] Command failed:`, command.id, error);
     const errorMsg = error instanceof Error ? error.message : "Unknown error";
-    addLogEntry("error", `${command.type} error: ${errorMsg}`);
+    addLogEntry("error", `Window ${windowId}: ${command.type} error: ${errorMsg}`);
     return {
       id: command.id,
       success: false,
@@ -602,42 +833,42 @@ async function handleCommand(command) {
     };
   }
 }
-function init() {
-  createManager();
-  wsManager.connect();
+async function init() {
+  await initWebSocket();
   console.log("[Background] Service worker initialized");
   addLogEntry("connection", "Extension started");
 }
-init();
+chrome.runtime.onStartup.addListener(() => {
+  console.log("[Background] Browser startup detected");
+  void initWebSocket();
+});
 function handlePopupMessage(message, sendResponse) {
   switch (message.type) {
     case "GET_STATUS": {
-      if (!wsManager) {
-        createManager();
+      const states = Array.from(wsManagers.values()).map((manager) => manager.getState());
+      let connectionStatus = "DISCONNECTED";
+      if (states.some((state) => state === "CONNECTED" /* CONNECTED */)) {
+        connectionStatus = "CONNECTED";
+      } else if (states.some((state) => state === "CONNECTING" /* CONNECTING */)) {
+        connectionStatus = "CONNECTING";
       }
-      const stateMap = {
-        ["CONNECTED" /* CONNECTED */]: "CONNECTED",
-        ["CONNECTING" /* CONNECTING */]: "CONNECTING",
-        ["DISCONNECTED" /* DISCONNECTED */]: "DISCONNECTED"
-      };
+      const reconnectAttempts = states.length ? Math.max(...Array.from(wsManagers.values()).map((manager) => manager.getReconnectAttempts())) : 0;
       const response = {
-        connectionStatus: stateMap[wsManager.getState()],
+        connectionStatus,
         websocketUrl: config.websocketUrl,
-        reconnectAttempts: wsManager.getReconnectAttempts(),
+        reconnectAttempts,
         maxReconnectAttempts: config.maxReconnectAttempts
       };
       sendResponse(response);
       return true;
     }
     case "CONNECT": {
-      initWebSocket();
+      void initWebSocket();
       sendResponse({ success: true });
       return true;
     }
     case "DISCONNECT": {
-      if (wsManager) {
-        wsManager.disconnect();
-      }
+      wsManagers.forEach((manager) => manager.disconnect());
       sendResponse({ success: true });
       return true;
     }
@@ -645,10 +876,8 @@ function handlePopupMessage(message, sendResponse) {
       const url = message.payload?.url;
       if (url) {
         config.websocketUrl = url;
-        if (wsManager) {
-          wsManager.disconnect();
-          wsManager = null;
-        }
+        wsManagers.forEach((manager) => manager.disconnect());
+        wsManagers.clear();
         addLogEntry("connection", `Server URL changed: ${url}`);
       }
       sendResponse({ success: true });
@@ -688,16 +917,18 @@ function broadcastToPopup(message) {
   }
 }
 function broadcastStatusUpdate() {
-  if (!wsManager) return;
-  const stateMap = {
-    ["CONNECTED" /* CONNECTED */]: "CONNECTED",
-    ["CONNECTING" /* CONNECTING */]: "CONNECTING",
-    ["DISCONNECTED" /* DISCONNECTED */]: "DISCONNECTED"
-  };
+  const states = Array.from(wsManagers.values()).map((manager) => manager.getState());
+  let status = "DISCONNECTED";
+  if (states.some((state) => state === "CONNECTED" /* CONNECTED */)) {
+    status = "CONNECTED";
+  } else if (states.some((state) => state === "CONNECTING" /* CONNECTING */)) {
+    status = "CONNECTING";
+  }
+  const reconnectAttempts = states.length ? Math.max(...Array.from(wsManagers.values()).map((manager) => manager.getReconnectAttempts())) : 0;
   broadcastToPopup({
     type: "STATUS_UPDATE",
-    status: stateMap[wsManager.getState()],
-    reconnectAttempts: wsManager.getReconnectAttempts(),
+    status,
+    reconnectAttempts,
     maxReconnectAttempts: config.maxReconnectAttempts
   });
 }
@@ -707,4 +938,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   return false;
 });
+chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+  clearTargetTabIfMatch(tabId, removeInfo.windowId);
+});
+chrome.windows.onCreated.addListener((window2) => {
+  if (window2.id === void 0) return;
+  const manager = getOrCreateManager(window2.id);
+  manager.connect();
+});
+chrome.windows.onRemoved.addListener((windowId) => {
+  const manager = wsManagers.get(windowId);
+  if (manager) {
+    manager.disconnect();
+    wsManagers.delete(windowId);
+  }
+});
+void init();
 //# sourceMappingURL=background.js.map

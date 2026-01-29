@@ -1,11 +1,22 @@
 import type { AgentCommand, AgentResponse, ResponseData } from '../shared/types';
 import type { ContentRequest, ContentResponse, ActionType } from '../shared/messages';
 
-let lastTargetTabId: number | null = null;
+const lastTargetTabIds = new Map<number, number>();
 
-export async function routeCommand(command: AgentCommand): Promise<AgentResponse> {
+/**
+ * Clear the last target tab ID if it matches the given tab ID
+ * Called when a tab is closed to prevent commands running on wrong tabs
+ */
+export function clearTargetTabIfMatch(tabId: number, windowId: number): void {
+  const lastTabId = lastTargetTabIds.get(windowId);
+  if (lastTabId === tabId) {
+    lastTargetTabIds.delete(windowId);
+  }
+}
 
-  const tab = await getTargetTab(command.type);
+export async function routeCommand(command: AgentCommand, windowId: number): Promise<AgentResponse> {
+
+  const tab = await getTargetTab(command.type, windowId);
 
   if (!tab) {
     return {
@@ -32,7 +43,7 @@ export async function routeCommand(command: AgentCommand): Promise<AgentResponse
   }
 
   if (command.type === 'snapshot') {
-    lastTargetTabId = tab.id;
+    lastTargetTabIds.set(windowId, tab.id!);
   }
 
   if (command.type === 'open') {
@@ -41,7 +52,7 @@ export async function routeCommand(command: AgentCommand): Promise<AgentResponse
       return { id: command.id, success: false, error: 'Missing URL for open command' };
     }
     await chrome.tabs.update(tab.id, { url });
-    lastTargetTabId = tab.id;
+    lastTargetTabIds.set(windowId, tab.id!);
     return { id: command.id, success: true, data: { executed: true } };
   }
 
@@ -66,9 +77,19 @@ export async function routeCommand(command: AgentCommand): Promise<AgentResponse
   }
 
   if (command.type === 'screenshot') {
-    // tab.windowId is guaranteed to exist for a valid tab object
-    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId!, { format: 'png' });
-    return { id: command.id, success: true, data: { screenshot: dataUrl } };
+    if (tab.windowId === undefined) {
+      return { id: command.id, success: false, error: 'Tab has no associated window' };
+    }
+    try {
+      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+      return { id: command.id, success: true, data: { screenshot: dataUrl } };
+    } catch (error) {
+      return { 
+        id: command.id, 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Screenshot capture failed (window may be minimized or not visible)' 
+      };
+    }
   }
 
   if (command.type === 'pdf') {
@@ -87,7 +108,8 @@ export async function routeCommand(command: AgentCommand): Promise<AgentResponse
           if (error) {
             resolve({ id: command.id, success: false, error: error.message });
           } else {
-            resolve({ id: command.id, success: true, data: { result: result.data } });
+            // Use 'pdf' field per protocol spec
+            resolve({ id: command.id, success: true, data: { pdf: result.data } });
           }
         });
       });
@@ -111,7 +133,7 @@ export async function routeCommand(command: AgentCommand): Promise<AgentResponse
         chrome.debugger.sendCommand(target, 'DOM.getDocument', {}, async (doc: any) => {
           // 2. Find the element using a selector (we'll inject a temporary attribute to find it)
           await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
+            target: { tabId: tab.id! },
             func: (refId: string) => {
               // This is a bit hacky but works: find the element in the registry and mark it
               // @ts-ignore
@@ -140,7 +162,7 @@ export async function routeCommand(command: AgentCommand): Promise<AgentResponse
 
               // Cleanup attribute
               chrome.scripting.executeScript({
-                target: { tabId: tab.id },
+                target: { tabId: tab.id! },
                 func: () => document.querySelector('[data-upload-target="true"]')?.removeAttribute('data-upload-target')
               });
 
@@ -209,15 +231,16 @@ export async function routeCommand(command: AgentCommand): Promise<AgentResponse
   }
 }
 
-async function getActiveTab(): Promise<chrome.tabs.Tab | null> {
+async function getActiveTab(windowId: number): Promise<chrome.tabs.Tab | null> {
   const tabs = await chrome.tabs.query({
     active: true,
-    currentWindow: true,
+    windowId,
   });
   return tabs[0] || null;
 }
 
-async function getTargetTab(commandType: AgentCommand['type']): Promise<chrome.tabs.Tab | null> {
+async function getTargetTab(commandType: AgentCommand['type'], windowId: number): Promise<chrome.tabs.Tab | null> {
+  const lastTargetTabId = lastTargetTabIds.get(windowId) ?? null;
   if (commandType !== 'snapshot' && lastTargetTabId !== null) {
     try {
       const previousTab = await chrome.tabs.get(lastTargetTabId);
@@ -229,7 +252,7 @@ async function getTargetTab(commandType: AgentCommand['type']): Promise<chrome.t
     }
   }
 
-  return getActiveTab();
+  return getActiveTab(windowId);
 }
 
 function isValidTabUrl(url: string): boolean {
@@ -245,29 +268,44 @@ function isValidTabUrl(url: string): boolean {
     !url.startsWith('devtools://');
 }
 
+async function pingContentScript(tabId: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tabId, { action: 'ping' }, (response) => {
+      if (chrome.runtime.lastError) {
+        resolve(false);
+      } else {
+        resolve(true);
+      }
+    });
+  });
+}
+
 async function ensureContentScriptInjected(tabId: number): Promise<void> {
-  try {
-    // Try to ping the content script first
-    await new Promise<void>((resolve, reject) => {
-      chrome.tabs.sendMessage(tabId, { action: 'ping' }, (response) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-        } else {
-          resolve();
-        }
-      });
-    });
-  } catch {
-    // Content script not present, inject it
-    console.log('[Router] Content script not found, injecting...');
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ['dist/content.js'],
-    });
-    // Give it a moment to initialize
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    console.log('[Router] Content script injected');
+  // Try to ping the content script first
+  if (await pingContentScript(tabId)) {
+    return;
   }
+
+  // Content script not present, inject it
+  console.log('[Router] Content script not found, injecting...');
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    files: ['dist/content.js'],
+  });
+
+  // Retry ping with exponential backoff to verify injection succeeded
+  const maxRetries = 5;
+  for (let i = 0; i < maxRetries; i++) {
+    const delay = 100 * Math.pow(2, i); // 100, 200, 400, 800, 1600ms
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    
+    if (await pingContentScript(tabId)) {
+      console.log('[Router] Content script injected and responding');
+      return;
+    }
+  }
+
+  throw new Error('Content script failed to initialize after injection');
 }
 
 async function sendToContentScript(tabId: number, request: ContentRequest): Promise<ContentResponse> {

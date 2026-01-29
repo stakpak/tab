@@ -4,7 +4,10 @@
  */
 
 import type { RefRegistry, FindParams } from '../../shared/types';
-import { isElementVisible, isInteractive } from './utils';
+import { isElementVisible } from './utils';
+
+// Counter for generating unique refs
+let findRefCounter = 0;
 
 /**
  * Find element based on params
@@ -81,8 +84,8 @@ export async function findElement(params: FindParams, registry: RefRegistry): Pr
             if (el === found) return ref;
         }
 
-        // Assign new ref if not found
-        const newRef = `f${Math.floor(Math.random() * 10000)}`;
+        // Assign new ref if not found - use counter + timestamp for uniqueness
+        const newRef = `f${Date.now()}_${++findRefCounter}`;
         registry.set(newRef, found);
         return newRef;
     }

@@ -69,11 +69,5 @@ export async function clickElement(ref: string, registry: RefRegistry): Promise<
 
   // Final click
   const clickEvent = new MouseEvent('click', { ...commonEventInit, buttons: 0 });
-  const cancelled = !element.dispatchEvent(clickEvent);
-
-  // If the event wasn't cancelled but nothing happened, try the native .click() method
-  // This is often needed for native links and buttons in some browsers
-  if (!cancelled && typeof (element as HTMLElement).click === 'function') {
-    (element as HTMLElement).click();
-  }
+  element.dispatchEvent(clickEvent);
 }

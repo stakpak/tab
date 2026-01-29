@@ -140,8 +140,11 @@ describe('action handlers', () => {
     const keydownHandler = vi.fn();
     document.body.addEventListener('keydown', keydownHandler);
 
-    await pressKey('Enter', undefined, registry);
-    expect(keydownHandler).toHaveBeenCalledWith(expect.objectContaining({ key: 'Enter' }));
+    await pressKey({ key: 'Enter' }, registry);
+    expect(keydownHandler).toHaveBeenCalled();
+    const event = keydownHandler.mock.calls[0][0];
+    expect(event).toBeInstanceOf(KeyboardEvent);
+    expect(event.key).toBe('Enter');
   });
 
   it('checks and unchecks a checkbox', async () => {
