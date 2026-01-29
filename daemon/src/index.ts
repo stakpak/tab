@@ -12,14 +12,13 @@
 
 import type { ChildProcess } from "node:child_process";
 import type { WebSocket } from "ws";
-import type { DaemonConfig, SessionId, Command, CommandResponse, ExtensionRegistrationResponse } from "./types.js";
+import type { DaemonConfig, SessionId, Command, CommandResponse } from "./types.js";
 import { DEFAULT_CONFIG } from "./types.js";
 import { createIpcServer, type IpcServer } from "./ipc-server.js";
 import { createWsServer, type WsServer } from "./ws-server.js";
 import { createSessionManager, type SessionManager } from "./session-manager.js";
 import { createBrowserManager, type BrowserManager } from "./browser-manager.js";
 import { createCommandRouter, type CommandRouter } from "./command-router.js";
-import { runQueryMode } from "./native-messaging-handler.js";
 
 // =============================================================================
 // Re-exports
@@ -31,13 +30,6 @@ export { createWsServer, type WsServer } from "./ws-server.js";
 export { createSessionManager, type SessionManager } from "./session-manager.js";
 export { createBrowserManager, type BrowserManager } from "./browser-manager.js";
 export { createCommandRouter, type CommandRouter } from "./command-router.js";
-export {
-  runQueryMode,
-  queryDaemonEndpoint,
-  registerExtension,
-  readNativeMessage,
-  writeNativeMessage,
-} from "./native-messaging-handler.js";
 
 // =============================================================================
 // Constants
@@ -203,9 +195,6 @@ export class TabDaemon {
     // Wire IPC server command handler to command router
     this.ipcServer.onCommand((command) => this.handleCliCommand(command));
 
-    // Wire IPC server registration handler
-    this.ipcServer.onRegistration(() => this.handleExtensionRegistration());
-
     // Wire WebSocket server events to session manager and command router
     this.wsServer.setEventHandlers({
       onExtensionConnected: (sessionId, ws) => this.handleExtensionConnected(sessionId, ws),
@@ -274,13 +263,17 @@ export class TabDaemon {
       session = this.sessionManager.getSessionByName(sessionId);
     }
     if (!session) {
-      // Create a new session for this extension
-      try {
-        session = this.sessionManager.createSession(sessionId);
-      } catch {
-        // If session name is invalid, use it as a generated name
-        console.warn(`Extension connected with invalid session ID: ${sessionId}, creating default session`);
-        session = this.sessionManager.getOrCreateDefaultSession();
+      // Assign the next awaiting session (daemon-launched browser) if available
+      session = this.sessionManager.assignNextAwaitingSession();
+      if (!session) {
+        // Create a new session for this extension (already launched browser)
+        try {
+          session = this.sessionManager.createSession(sessionId);
+        } catch {
+          // If session name is invalid, use it as a generated name
+          console.warn(`Extension connected with invalid session ID: ${sessionId}, creating default session`);
+          session = this.sessionManager.getOrCreateDefaultSession();
+        }
       }
     }
 
@@ -296,29 +289,14 @@ export class TabDaemon {
     // Notify command router that extension connected (for waiters)
     this.commandRouter.notifyExtensionConnected(session.id);
 
-    console.log(`Extension connected for session: ${session.name} (${session.id})`);
-  }
-
-  /**
-   * Handle extension registration request (via native messaging)
-   * Assigns a session to the requesting extension
-   */
-  private async handleExtensionRegistration(): Promise<ExtensionRegistrationResponse> {
-    // Try to find a session awaiting extension connection
-    let session = this.sessionManager.assignNextAwaitingSession();
-    
-    // If no awaiting session, use or create the default session
-    if (!session) {
-      session = this.sessionManager.getOrCreateDefaultSession();
+    // Inform extension of assigned session ID
+    try {
+      ws.send(JSON.stringify({ type: "session_assigned", sessionId: session.id }));
+    } catch (error) {
+      console.warn(`Failed to send session assignment to extension: ${session.id}`, error);
     }
 
-    console.log(`Extension registered for session: ${session.name} (${session.id})`);
-
-    return {
-      sessionId: session.id,
-      ip: "127.0.0.1",
-      port: this.config.wsPort,
-    };
+    console.log(`Extension connected for session: ${session.name} (${session.id})`);
   }
 
   /**
@@ -492,7 +470,6 @@ export function createDaemon(config?: Partial<DaemonConfig>): TabDaemon {
  */
 interface CliArgs {
   config: Partial<DaemonConfig>;
-  queryMode: boolean;
 }
 
 /**
@@ -500,16 +477,11 @@ interface CliArgs {
  */
 function parseArgs(args: string[]): CliArgs {
   const config: Partial<DaemonConfig> = {};
-  let queryMode = false;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
 
     switch (arg) {
-      case "--query":
-      case "-q":
-        queryMode = true;
-        break;
       case "--socket":
       case "-s":
         config.ipcSocketPath = args[++i];
@@ -535,7 +507,7 @@ function parseArgs(args: string[]): CliArgs {
     }
   }
 
-  return { config, queryMode };
+  return { config };
 }
 
 /**
@@ -551,7 +523,6 @@ Options:
   -s, --socket <path>    IPC socket path (default: /tmp/tab-daemon.sock)
   -p, --port <port>      WebSocket server port (default: 9222)
   -b, --browser <path>   Path to Chrome/Chromium executable
-  -q, --query            Query mode: get endpoint from running daemon (for native messaging)
   -h, --help             Show this help message
   -v, --version          Show version information
 
@@ -563,7 +534,6 @@ Environment Variables:
 Examples:
   tab-daemon                      Start with default settings
   tab-daemon -p 9333              Use port 9333 for WebSocket server
-  tab-daemon --query              Query running daemon for endpoint (native messaging host)
   tab-daemon --browser /usr/bin/chromium
   `);
 }
@@ -595,17 +565,10 @@ async function main(): Promise<void> {
   const envConfig = loadEnvConfig();
 
   // Parse command line arguments (override env config)
-  const { config: cliConfig, queryMode } = parseArgs(process.argv.slice(2));
+  const { config: cliConfig } = parseArgs(process.argv.slice(2));
 
   // Merge configurations
   const config = { ...envConfig, ...cliConfig };
-
-  // Query mode: run as native messaging host
-  if (queryMode) {
-    const socketPath = config.ipcSocketPath || DEFAULT_CONFIG.ipcSocketPath;
-    await runQueryMode(socketPath);
-    return;
-  }
 
   // Normal mode: start daemon
   const daemon = createDaemon(config);
