@@ -10,7 +10,7 @@ Before implementing:
 
 ## 2. Simplicity First
 
-**Minimum code that solves the problem. Nothing speculative.**
+**Minimum code that solves the problem. Nothing speculative.**7
 
 - No features beyond what was asked.
 - No abstractions for single-use code.
@@ -54,3 +54,10 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
+## 5. Available Skills
+
+Reference these skills when performing specific tasks:
+
+| Skill | File | Use When |
+|-------|------|----------|
+| Tab Browser Automation | `skills/tab-browser-automation.md` | Automating browser interactions via CLI |

@@ -225,11 +225,13 @@ export class CommandRouter {
       // Mark session as awaiting extension
       this.sessionManager.updateSessionState(sessionId, "awaiting_extension");
 
-      // Launch browser with profile directory from session
+      // Launch browser with profile directory from session and URL from command
       const session = this.sessionManager.getSession(sessionId);
       const profileDir = session?.profileDir;
+      // Extract URL from navigate/open command to open browser directly to that page
+      const url = command.params?.url as string | undefined;
       try {
-        await this.browserManager.launchBrowser({ sessionId, profileDir });
+        await this.browserManager.launchBrowser({ sessionId, profileDir, url });
       } catch (err) {
         this.sessionManager.updateSessionState(sessionId, "disconnected");
         return {

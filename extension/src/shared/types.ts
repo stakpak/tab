@@ -160,19 +160,13 @@ export type CommandParams =
   | FindParams
   | MouseParams;
 
-/**
- * Configuration
- * 
- * TODO: Add sessionStorageKey field for chrome.storage key name
- * used to persist the cached session_id.
- */
+
 export interface ExtensionConfig {
   websocketUrl: string;
   reconnectInterval: number;
   maxReconnectAttempts: number;
   heartbeatInterval: number;
   heartbeatTimeout: number;
-  // TODO: Add sessionStorageKey for chrome.storage session persistence
 }
 
 // =============================================================================
@@ -198,13 +192,7 @@ export interface ResponseData {
   title?: string;
 }
 
-/**
- * Command sent from agent to extension via WebSocket
- *
- * TODO: Add session_assignment message type for daemon handshake.
- * When extension connects, daemon responds with session_assigned containing
- * the final session_id which extension must cache in chrome.storage.
- */
+
 export interface AgentCommand {
   id: string;
   type: CommandType;
@@ -220,16 +208,6 @@ export interface AgentResponse {
   error?: string;
   data?: ResponseData;
 }
-
-/**
- * TODO: Add SessionAssignment message type for daemon handshake response.
- * Sent by daemon to extension after connection establishment.
- * Extension must persist this session_id for reconnection.
- */
-// export interface SessionAssignment {
-//   type: 'session_assigned';
-//   sessionId: string;
-// }
 
 // =============================================================================
 // REF REGISTRY (Snapshot-local element references)

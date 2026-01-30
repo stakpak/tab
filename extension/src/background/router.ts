@@ -34,7 +34,8 @@ export async function routeCommand(command: AgentCommand, windowId: number): Pro
     };
   }
 
-  if (!tab.url || !isValidTabUrl(tab.url)) {
+  // Skip URL validation for 'open' command - it's meant to navigate away from any page
+  if (command.type !== 'open' && (!tab.url || !isValidTabUrl(tab.url))) {
     return {
       id: command.id,
       success: false,

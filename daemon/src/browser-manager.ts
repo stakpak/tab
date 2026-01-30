@@ -88,17 +88,8 @@ export class BrowserManager {
   // Browser Lifecycle
   // ===========================================================================
 
-  /**
-   * Launch a new browser instance for a session
-   * 
-   * TODO: Use options.profileDir to set Chrome's --user-data-dir flag.
-   * If profileDir is provided, pass it as --user-data-dir=<profileDir>.
-   * If profileDir is undefined, use default profile (no flag needed).
-   * This ensures each profile has isolated browser state (cookies, localStorage, etc.).
-   */
   async launchBrowser(options: BrowserLaunchOptions): Promise<ChildProcess> {
     const { sessionId } = options;
-    // TODO: Extract profileDir from options when implemented
 
     // Check if session already has a browser
     if (this.hasBrowser(sessionId)) {
@@ -116,8 +107,6 @@ export class BrowserManager {
       throw new Error(`Browser executable not found or not executable: ${executablePath}`);
     }
 
-    // Build command line arguments
-    // TODO: Pass profileDir to buildBrowserArgs so it can add --user-data-dir flag
     const args = this.buildBrowserArgs(options);
 
     // Spawn browser process
@@ -329,16 +318,7 @@ export class BrowserManager {
   // Browser Arguments
   // ===========================================================================
 
-  /**
-   * Build command line arguments for browser launch
-   * 
-   * TODO: Add support for profileDir option to set --user-data-dir.
-   * When profileDir is provided:
-   *   - Use it as --user-data-dir=<profileDir>
-   * When profileDir is undefined:
-   *   - Use default Chrome profile (no flag needed)
-   * This ensures sessions are isolated by profile directory.
-   */
+
   private buildBrowserArgs(options: BrowserLaunchOptions): string[] {
     const args: string[] = [];
 
@@ -364,11 +344,10 @@ export class BrowserManager {
       args.push(...options.args);
     }
 
-    // NOTE: Do NOT add headless flags - browsers are always headed in tab
-
-    // NOTE: The tab extension must be installed by the user (Chrome Web Store or unpacked).
-    // Extension discovers daemon via well-known port (default 9222).
-    // Session ID is managed by the extension (default session or from extension storage).
+    // Add URL to open directly (must be last argument)
+    if (options.url) {
+      args.push(`--new-window`, options.url);
+    }
 
     return args;
   }

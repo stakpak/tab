@@ -6,6 +6,7 @@
 pub mod cli;
 pub mod commands;
 pub mod config;
+pub mod daemon;
 pub mod error;
 pub mod ipc;
 pub mod output;
@@ -29,7 +30,7 @@ pub fn run(cli: Cli) -> Result<()> {
     use cli::Commands;
     use cli::TabCommands;
 
-    // Handle ping command separately (doesn't need session)
+    // Handle ping command separately (doesn't need session, doesn't auto-start)
     if matches!(cli.command, Commands::Ping) {
         let config = config::load_config();
         let client = IpcClient::new(config);
@@ -47,17 +48,20 @@ pub fn run(cli: Cli) -> Result<()> {
     // 1. Load configuration
     let config = config::load_config();
 
-    // 2. Create IPC client
+    // 2. Ensure daemon is running (auto-start if needed)
+    daemon::ensure_daemon_running(&config)?;
+
+    // 3. Create IPC client
     let client = IpcClient::new(config);
 
-    // 3. Resolve session and profile
+    // 4. Resolve session and profile
     let (session_id, profile) =
         session::resolve_session_and_profile(cli.session.as_deref(), cli.profile.as_deref());
 
-    // 4. Create command context
+    // 5. Create command context
     let ctx = commands::CommandContext::new(client, session_id, profile);
 
-    // 5. Match on command and execute
+    // 6. Match on command and execute
     let response = match cli.command {
         Commands::Navigate(args) => commands::navigate(&ctx, &args.url)?,
         Commands::Snapshot => commands::snapshot(&ctx)?,
@@ -79,7 +83,7 @@ pub fn run(cli: Cli) -> Result<()> {
         Commands::Ping => unreachable!(), // Handled above
     };
 
-    // 6. Format and print output
+    // 7. Format and print output
     let output_format = match cli.output {
         cli::OutputFormat::Human => output::OutputFormat::Human,
         cli::OutputFormat::Json => output::OutputFormat::Json,
@@ -88,7 +92,7 @@ pub fn run(cli: Cli) -> Result<()> {
     let formatter = OutputFormatter::new(output_format);
     formatter.print_response(&response)?;
 
-    // 7. Return result
+    // 8. Return result
     if response.success {
         Ok(())
     } else {

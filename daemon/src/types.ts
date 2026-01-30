@@ -108,7 +108,6 @@ export type CommandType =
 export interface Command {
   id: CommandId;
   sessionId: SessionId;
-  /** Browser profile directory. Undefined means default profile. */
   profile: string | undefined;
   type: CommandType;
   params?: Record<string, unknown>;
@@ -195,9 +194,7 @@ export interface WsMessage {
  * If invalid/absent, daemon uses heuristic matching or creates new session.
  */
 export interface ExtensionRegistration {
-  /** Browser window ID from Chrome. Used to track which window is which. */
   windowId: number;
-  /** Cached session ID from previous connection. Used for reattachment. */
   cachedSessionId: SessionId | undefined;
 }
 
@@ -211,11 +208,14 @@ export interface ExtensionRegistration {
  * profileDir specifies which browser profile directory to use.
  * This maps to Chrome's --user-data-dir flag.
  * Undefined means use default profile.
+ * 
+ * url specifies the initial URL to open. If provided, the browser
+ * will launch directly to this URL using --new-window flag.
  */
 export interface BrowserLaunchOptions {
   sessionId: SessionId;
-  /** Browser profile directory. Undefined means default profile. */
   profileDir: string | undefined;
+  url?: string;
   executablePath?: string;
   args?: string[];
 }
