@@ -198,7 +198,16 @@ export class TabDaemon {
     });
   }
 
-  //TODO: Need To Change This
+  /**
+   * Handle CLI command with profile-aware session resolution
+   * 
+   * Logic:
+   * 1. Check if session exists by ID
+   * 2. If not found, check if it exists by name
+   * 3. If session not found and name is not "default", create new session with that name
+   * 4. If session not found and name is "default", get/create default session for profile
+   * 5. Profile directory determines which default session to use (per-profile default sessions)
+   */
   private async handleCliCommand(command: Command): Promise<CommandResponse> {
 
     if (!this.isActive()) {
@@ -209,37 +218,37 @@ export class TabDaemon {
       };
     }
 
+    // Try to find existing session by ID
     let session = this.sessionManager.getSession(command.sessionId);
 
+    // If not found by ID, try to find by name
     if (!session) {
       session = this.sessionManager.getSessionByName(command.sessionId);
     }
 
-    // Command will come from the cli having a profile directory or (undefined) default profile
-    // You don't need the profile directory to route already existing sessions except default session
-    // You need the profile directory to create a new session
-
-    // So Logic Is 
-    // Check if session exists by id or name
-    // If this id is not found and not default session id, create a new session with this id
-    // If this id is not found and default session id, check the default session for this profile
-    // If The profile is undefined, assume the default profile
-    // If The default session is not found, create a new default session
-    // If The default session is found, use it
-    // If the sessionId is found, use it
-
+    // Session not found - need to create it
     if (!session) {
-      if (!command.sessionId || command.sessionId === "default") {
-        session = this.sessionManager.getOrCreateDefaultSession();
+      const sessionName = command.sessionId || "default";
+      
+      if (sessionName === "default") {
+        // For default sessions, use profile-aware logic
+        // Each profile has its own default session
+        session = this.sessionManager.getOrCreateDefaultSession(command.profile);
       } else {
-        return {
-          id: command.id,
-          success: false,
-          error: `Session not found: ${command.sessionId}`,
-        };
+        // For named sessions, create new session with provided name and profile
+        try {
+          session = this.sessionManager.createSession(sessionName, command.profile);
+        } catch (error) {
+          return {
+            id: command.id,
+            success: false,
+            error: `Failed to create session "${sessionName}": ${error instanceof Error ? error.message : String(error)}`,
+          };
+        }
       }
     }
 
+    // Update command with the actual session ID
     command = { ...command, sessionId: session.id };
 
     return this.commandRouter.submitCommand(command);
