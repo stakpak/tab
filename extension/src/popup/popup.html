@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LLM Browser Agent</title>
   <link rel="stylesheet" href="popup.css">
 </head>
+
 <body>
   <div class="container">
     <!-- Header -->
@@ -17,17 +19,20 @@
       </div>
     </header>
 
+    <!-- Session ID -->
+    <section class="section session-section">
+      <label class="label">Session ID</label>
+      <div class="session-id-container">
+        <code class="session-id" id="session-id">Not connected</code>
+        <button id="copy-session-btn" class="btn btn-text btn-small" title="Copy to clipboard">Copy</button>
+      </div>
+    </section>
+
     <!-- Connection Settings -->
     <section class="section">
       <label class="label" for="ws-url">WebSocket Server</label>
       <div class="input-group">
-        <input 
-          type="text" 
-          id="ws-url" 
-          class="input" 
-          placeholder="ws://localhost:8080"
-          spellcheck="false"
-        >
+        <input type="text" id="ws-url" class="input" placeholder="ws://localhost:9222" spellcheck="false">
         <button id="save-url-btn" class="btn btn-secondary btn-small" title="Save URL">
           Save
         </button>
@@ -61,4 +66,5 @@
 
   <script src="popup.js"></script>
 </body>
+
 </html>

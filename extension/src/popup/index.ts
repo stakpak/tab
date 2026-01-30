@@ -6,6 +6,7 @@
 import type {
   PopupMessage,
   StatusResponse,
+  SessionIdResponse,
   ActivityLogEntry,
   ConnectionStatus,
 } from '../shared/messages';
@@ -17,6 +18,8 @@ import type {
 const elements = {
   statusBadge: document.getElementById('status-badge') as HTMLDivElement,
   statusText: document.getElementById('status-text') as HTMLSpanElement,
+  sessionId: document.getElementById('session-id') as HTMLElement,
+  copySessionBtn: document.getElementById('copy-session-btn') as HTMLButtonElement,
   wsUrlInput: document.getElementById('ws-url') as HTMLInputElement,
   saveUrlBtn: document.getElementById('save-url-btn') as HTMLButtonElement,
   connectBtn: document.getElementById('connect-btn') as HTMLButtonElement,
@@ -31,6 +34,7 @@ const elements = {
 // =============================================================================
 
 let currentStatus: ConnectionStatus = 'DISCONNECTED';
+let currentSessionId: string | null = null;
 let activityEntries: ActivityLogEntry[] = [];
 
 // =============================================================================
@@ -79,6 +83,33 @@ function updateReconnectHint(attempts: number, maxAttempts: number): void {
     elements.reconnectHint.textContent = `Reconnect attempts: ${attempts}/${maxAttempts}`;
   } else {
     elements.reconnectHint.textContent = '';
+  }
+}
+
+function updateSessionId(sessionId: string | null): void {
+  currentSessionId = sessionId;
+  if (sessionId) {
+    elements.sessionId.textContent = sessionId;
+    elements.sessionId.classList.remove('not-connected');
+    elements.copySessionBtn.disabled = false;
+  } else {
+    elements.sessionId.textContent = 'Not connected';
+    elements.sessionId.classList.add('not-connected');
+    elements.copySessionBtn.disabled = true;
+  }
+}
+
+async function handleCopySessionId(): Promise<void> {
+  if (!currentSessionId) return;
+  try {
+    await navigator.clipboard.writeText(currentSessionId);
+    const originalText = elements.copySessionBtn.textContent;
+    elements.copySessionBtn.textContent = 'Copied!';
+    setTimeout(() => {
+      elements.copySessionBtn.textContent = originalText;
+    }, 1500);
+  } catch (error) {
+    console.error('Failed to copy:', error);
   }
 }
 
@@ -203,6 +234,16 @@ async function loadStatus(): Promise<void> {
   }
 }
 
+async function loadSessionId(): Promise<void> {
+  try {
+    const response = await sendMessage<SessionIdResponse>({ type: 'GET_SESSION_ID' });
+    updateSessionId(response.sessionId);
+  } catch (error) {
+    console.error('Failed to load session ID:', error);
+    updateSessionId(null);
+  }
+}
+
 async function loadActivityLog(): Promise<void> {
   try {
     const response = await sendMessage<{ entries: ActivityLogEntry[] }>({
@@ -220,6 +261,7 @@ function setupEventListeners(): void {
   elements.disconnectBtn.addEventListener('click', handleDisconnect);
   elements.saveUrlBtn.addEventListener('click', handleSaveUrl);
   elements.clearLogBtn.addEventListener('click', handleClearLog);
+  elements.copySessionBtn.addEventListener('click', handleCopySessionId);
 
   // Enter key in URL input triggers save
   elements.wsUrlInput.addEventListener('keydown', (e) => {
@@ -236,6 +278,8 @@ chrome.runtime.onMessage.addListener((message) => {
     if (message.reconnectAttempts !== undefined) {
       updateReconnectHint(message.reconnectAttempts, message.maxReconnectAttempts);
     }
+    // Refresh session ID when status changes
+    loadSessionId();
   } else if (message.type === 'ACTIVITY_LOG_ENTRY') {
     activityEntries.push(message.entry);
     renderActivityLog();
@@ -246,5 +290,6 @@ chrome.runtime.onMessage.addListener((message) => {
 document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
   await loadStatus();
+  await loadSessionId();
   await loadActivityLog();
 });

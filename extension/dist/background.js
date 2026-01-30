@@ -1,6 +1,6 @@
 // src/shared/types.ts
 var DEFAULT_CONFIG = {
-  websocketUrl: "ws://localhost:8080",
+  websocketUrl: "ws://localhost:9222",
   reconnectInterval: 3e3,
   maxReconnectAttempts: 10,
   heartbeatInterval: 3e4,
@@ -8,6 +8,30 @@ var DEFAULT_CONFIG = {
   heartbeatTimeout: 1e4
   // Wait 10 seconds for pong (aligned with daemon)
 };
+
+// src/background/storage.ts
+var STORAGE_KEY_PREFIX = "session_";
+function getCachedSessionId(windowId) {
+  const key = `${STORAGE_KEY_PREFIX}${windowId}`;
+  return new Promise((resolve) => {
+    chrome.storage.local.get(key, (result) => {
+      const stored = result[key];
+      if (typeof stored === "string" && stored.length > 0) {
+        resolve(stored);
+      } else {
+        resolve(null);
+      }
+    });
+  });
+}
+function setCachedSessionId(windowId, sessionId) {
+  const key = `${STORAGE_KEY_PREFIX}${windowId}`;
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ [key]: sessionId }, () => {
+      resolve();
+    });
+  });
+}
 
 // src/background/websocket.ts
 function createWebSocketManager(config2, windowId, onCommand, callbacks) {
@@ -75,7 +99,7 @@ function createWebSocketManager(config2, windowId, onCommand, callbacks) {
     console.log("[WebSocket] Pong received");
   }
   const manager = {
-    connect() {
+    async connect() {
       if (state === "CONNECTING" /* CONNECTING */) {
         console.log("[WebSocket] Already connecting");
         return;
@@ -90,14 +114,20 @@ function createWebSocketManager(config2, windowId, onCommand, callbacks) {
       }
       setState("CONNECTING" /* CONNECTING */);
       shouldReconnect = true;
-      const wsUrl = `${config2.websocketUrl}/ws/session/${windowId}`;
-      console.log(`[WebSocket:${windowId}] Connecting to`, wsUrl);
+      const cachedSessionId = await getCachedSessionId(windowId);
+      const wsUrl = `${config2.websocketUrl}/ws`;
+      console.log(`[WebSocket:Window${windowId}] Connecting to daemon...`);
       try {
         ws = new WebSocket(wsUrl);
         ws.onopen = () => {
           setState("CONNECTED" /* CONNECTED */);
           reconnectAttempts = 0;
-          console.log(`[WebSocket:${windowId}] Connected`);
+          console.log(`[WebSocket:Window${windowId}] Connected - requesting session assignment`);
+          ws?.send(JSON.stringify({
+            type: "register",
+            windowId,
+            cachedSessionId
+          }));
           startHeartbeat();
         };
         ws.onmessage = async (event) => {
@@ -111,6 +141,11 @@ function createWebSocketManager(config2, windowId, onCommand, callbacks) {
           }
           if (isPongMessage(payload)) {
             handlePong();
+            return;
+          }
+          if (isSessionAssignedMessage(payload)) {
+            setCachedSessionId(windowId, payload.sessionId);
+            console.log(`[WebSocket:Window${windowId}] Session assigned: ${payload.sessionId}`);
             return;
           }
           const command = parseCommand(payload);
@@ -233,6 +268,9 @@ function parseCommand(data) {
 }
 function isPongMessage(payload) {
   return payload !== null && typeof payload === "object" && "type" in payload && payload.type === "pong";
+}
+function isSessionAssignedMessage(payload) {
+  return payload !== null && typeof payload === "object" && "type" in payload && payload.type === "session_assigned" && "sessionId" in payload && typeof payload.sessionId === "string";
 }
 function validateCommand(obj) {
   if (!obj || typeof obj !== "object") {
@@ -602,130 +640,11 @@ async function getActiveTabId(windowId) {
   return tabs[0]?.id;
 }
 
-// src/background/native-messaging.ts
-var NATIVE_HOST_NAME = "com.stakpak.tab_daemon";
-function isNativeMessagingAvailable() {
-  return !!(typeof chrome !== "undefined" && chrome.runtime && typeof chrome.runtime.sendNativeMessage === "function");
-}
-function requestDaemonEndpoint() {
-  return new Promise((resolve, reject) => {
-    if (!isNativeMessagingAvailable()) {
-      reject(new Error("Native messaging is not available"));
-      return;
-    }
-    const request = { type: "get_browser_endpoint" };
-    chrome.runtime.sendNativeMessage(
-      NATIVE_HOST_NAME,
-      request,
-      (response) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message || "Native messaging failed"));
-          return;
-        }
-        if (!response) {
-          reject(new Error("Empty response from native host"));
-          return;
-        }
-        if ("error" in response) {
-          reject(new Error(response.error));
-          return;
-        }
-        if (typeof response.ip !== "string" || typeof response.port !== "number") {
-          reject(new Error("Invalid response format from native host"));
-          return;
-        }
-        resolve({ ip: response.ip, port: response.port });
-      }
-    );
-  });
-}
-
-// src/background/storage.ts
-var STORAGE_KEY_ENDPOINT = "daemon_endpoint";
-function getCachedEndpoint() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(STORAGE_KEY_ENDPOINT, (result) => {
-      const stored = result[STORAGE_KEY_ENDPOINT];
-      if (stored && typeof stored === "object" && typeof stored.ip === "string" && typeof stored.port === "number") {
-        resolve({ ip: stored.ip, port: stored.port });
-      } else {
-        resolve(null);
-      }
-    });
-  });
-}
-function setCachedEndpoint(endpoint) {
-  return new Promise((resolve) => {
-    chrome.storage.local.set({ [STORAGE_KEY_ENDPOINT]: endpoint }, () => {
-      resolve();
-    });
-  });
-}
-
-// src/background/endpoint-manager.ts
-var MIN_REQUEST_INTERVAL_MS = 5e3;
-function createEndpointManager(callbacks) {
-  let lastRequestTime = 0;
-  let pendingRequest = null;
-  async function fetchFromNativeMessaging() {
-    if (!isNativeMessagingAvailable()) {
-      throw new Error("Native messaging is not available");
-    }
-    const now = Date.now();
-    const timeSinceLastRequest = now - lastRequestTime;
-    if (timeSinceLastRequest < MIN_REQUEST_INTERVAL_MS) {
-      const waitTime = MIN_REQUEST_INTERVAL_MS - timeSinceLastRequest;
-      await new Promise((resolve) => setTimeout(resolve, waitTime));
-    }
-    lastRequestTime = Date.now();
-    const endpoint = await requestDaemonEndpoint();
-    await setCachedEndpoint(endpoint);
-    return endpoint;
-  }
-  const manager = {
-    async getEndpoint() {
-      const cached = await getCachedEndpoint();
-      if (cached) {
-        console.log("[EndpointManager] Using cached endpoint:", cached);
-        callbacks?.onEndpointResolved?.(cached, true);
-        return cached;
-      }
-      console.log("[EndpointManager] Cache miss, requesting via native messaging");
-      return manager.refreshEndpoint();
-    },
-    async refreshEndpoint() {
-      if (pendingRequest) {
-        console.log("[EndpointManager] Returning pending request");
-        return pendingRequest;
-      }
-      try {
-        pendingRequest = fetchFromNativeMessaging();
-        const endpoint = await pendingRequest;
-        console.log("[EndpointManager] Got endpoint via native messaging:", endpoint);
-        callbacks?.onEndpointResolved?.(endpoint, false);
-        return endpoint;
-      } catch (error) {
-        const err = error instanceof Error ? error : new Error(String(error));
-        console.error("[EndpointManager] Failed to get endpoint:", err.message);
-        callbacks?.onEndpointError?.(err);
-        throw err;
-      } finally {
-        pendingRequest = null;
-      }
-    },
-    buildWebSocketUrl(endpoint) {
-      return `ws://${endpoint.ip}:${endpoint.port}`;
-    }
-  };
-  return manager;
-}
-
 // src/background/index.ts
 var wsManagers = /* @__PURE__ */ new Map();
 var config = { ...DEFAULT_CONFIG };
 var activityLog = [];
 var MAX_LOG_ENTRIES = 100;
-var endpointManager = null;
 function createManager(windowId) {
   const manager = createWebSocketManager(config, windowId, handleCommand, {
     onStateChange: (state) => {
@@ -740,7 +659,6 @@ function createManager(windowId) {
     },
     onMaxReconnectAttemptsReached: () => {
       addLogEntry("error", `Window ${windowId}: Max reconnect attempts reached`);
-      void refreshEndpointAndReconnect(windowId);
     }
   });
   wsManagers.set(windowId, manager);
@@ -749,55 +667,8 @@ function createManager(windowId) {
 function getOrCreateManager(windowId) {
   return wsManagers.get(windowId) ?? createManager(windowId);
 }
-async function refreshEndpointAndReconnect(windowId) {
-  if (!endpointManager) {
-    console.warn("[Background] No endpoint manager, cannot refresh");
-    return;
-  }
-  try {
-    addLogEntry("connection", "Refreshing daemon endpoint...");
-    const endpoint = await endpointManager.refreshEndpoint();
-    const newUrl = endpointManager.buildWebSocketUrl(endpoint);
-    if (newUrl !== config.websocketUrl) {
-      config.websocketUrl = newUrl;
-      addLogEntry("connection", `Endpoint updated: ${newUrl}`);
-      const oldManager = wsManagers.get(windowId);
-      if (oldManager) {
-        oldManager.disconnect();
-        wsManagers.delete(windowId);
-      }
-      const newManager = createManager(windowId);
-      newManager.connect();
-    } else {
-      addLogEntry("connection", "Endpoint unchanged, not reconnecting");
-    }
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    addLogEntry("error", `Endpoint refresh failed: ${msg}`);
-  }
-}
 async function initWebSocket() {
-  if (!endpointManager && isNativeMessagingAvailable()) {
-    endpointManager = createEndpointManager({
-      onEndpointResolved: (endpoint, fromCache) => {
-        const source = fromCache ? "cache" : "native messaging";
-        addLogEntry("connection", `Endpoint resolved from ${source}: ${endpoint.ip}:${endpoint.port}`);
-      },
-      onEndpointError: (error) => {
-        addLogEntry("error", `Endpoint discovery failed: ${error.message}`);
-      }
-    });
-  }
-  if (endpointManager) {
-    try {
-      const endpoint = await endpointManager.getEndpoint();
-      config.websocketUrl = endpointManager.buildWebSocketUrl(endpoint);
-      console.log("[Background] Using daemon endpoint:", config.websocketUrl);
-    } catch (error) {
-      console.warn("[Background] Failed to get daemon endpoint, using default:", error);
-      addLogEntry("error", "Using default endpoint - native messaging failed");
-    }
-  }
+  console.log("[Background] Connecting to daemon at:", config.websocketUrl);
   const windows = await chrome.windows.getAll();
   windows.forEach((window2) => {
     if (window2.id === void 0) return;
@@ -838,10 +709,6 @@ async function init() {
   console.log("[Background] Service worker initialized");
   addLogEntry("connection", "Extension started");
 }
-chrome.runtime.onStartup.addListener(() => {
-  console.log("[Background] Browser startup detected");
-  void initWebSocket();
-});
 function handlePopupMessage(message, sendResponse) {
   switch (message.type) {
     case "GET_STATUS": {
@@ -891,6 +758,17 @@ function handlePopupMessage(message, sendResponse) {
       sendResponse(response);
       return true;
     }
+    case "GET_SESSION_ID": {
+      chrome.windows.getCurrent().then(async (window2) => {
+        if (window2.id === void 0) {
+          sendResponse({ sessionId: null, windowId: -1 });
+          return;
+        }
+        const sessionId = await getCachedSessionId(window2.id);
+        sendResponse({ sessionId, windowId: window2.id });
+      });
+      return true;
+    }
     default:
       return false;
   }
@@ -933,7 +811,7 @@ function broadcastStatusUpdate() {
   });
 }
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.type && ["GET_STATUS", "CONNECT", "DISCONNECT", "UPDATE_URL", "GET_ACTIVITY_LOG"].includes(message.type)) {
+  if (message.type && ["GET_STATUS", "GET_SESSION_ID", "CONNECT", "DISCONNECT", "UPDATE_URL", "GET_ACTIVITY_LOG"].includes(message.type)) {
     return handlePopupMessage(message, sendResponse);
   }
   return false;

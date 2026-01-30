@@ -2,6 +2,8 @@
 var elements = {
   statusBadge: document.getElementById("status-badge"),
   statusText: document.getElementById("status-text"),
+  sessionId: document.getElementById("session-id"),
+  copySessionBtn: document.getElementById("copy-session-btn"),
   wsUrlInput: document.getElementById("ws-url"),
   saveUrlBtn: document.getElementById("save-url-btn"),
   connectBtn: document.getElementById("connect-btn"),
@@ -11,6 +13,7 @@ var elements = {
   clearLogBtn: document.getElementById("clear-log-btn")
 };
 var currentStatus = "DISCONNECTED";
+var currentSessionId = null;
 var activityEntries = [];
 async function sendMessage(message) {
   return new Promise((resolve, reject) => {
@@ -42,6 +45,31 @@ function updateReconnectHint(attempts, maxAttempts) {
     elements.reconnectHint.textContent = `Reconnect attempts: ${attempts}/${maxAttempts}`;
   } else {
     elements.reconnectHint.textContent = "";
+  }
+}
+function updateSessionId(sessionId) {
+  currentSessionId = sessionId;
+  if (sessionId) {
+    elements.sessionId.textContent = sessionId;
+    elements.sessionId.classList.remove("not-connected");
+    elements.copySessionBtn.disabled = false;
+  } else {
+    elements.sessionId.textContent = "Not connected";
+    elements.sessionId.classList.add("not-connected");
+    elements.copySessionBtn.disabled = true;
+  }
+}
+async function handleCopySessionId() {
+  if (!currentSessionId) return;
+  try {
+    await navigator.clipboard.writeText(currentSessionId);
+    const originalText = elements.copySessionBtn.textContent;
+    elements.copySessionBtn.textContent = "Copied!";
+    setTimeout(() => {
+      elements.copySessionBtn.textContent = originalText;
+    }, 1500);
+  } catch (error) {
+    console.error("Failed to copy:", error);
   }
 }
 function renderActivityLog() {
@@ -143,6 +171,15 @@ async function loadStatus() {
     addLocalLogEntry("error", "Failed to load status from background");
   }
 }
+async function loadSessionId() {
+  try {
+    const response = await sendMessage({ type: "GET_SESSION_ID" });
+    updateSessionId(response.sessionId);
+  } catch (error) {
+    console.error("Failed to load session ID:", error);
+    updateSessionId(null);
+  }
+}
 async function loadActivityLog() {
   try {
     const response = await sendMessage({
@@ -159,6 +196,7 @@ function setupEventListeners() {
   elements.disconnectBtn.addEventListener("click", handleDisconnect);
   elements.saveUrlBtn.addEventListener("click", handleSaveUrl);
   elements.clearLogBtn.addEventListener("click", handleClearLog);
+  elements.copySessionBtn.addEventListener("click", handleCopySessionId);
   elements.wsUrlInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       handleSaveUrl();
@@ -171,6 +209,7 @@ chrome.runtime.onMessage.addListener((message) => {
     if (message.reconnectAttempts !== void 0) {
       updateReconnectHint(message.reconnectAttempts, message.maxReconnectAttempts);
     }
+    loadSessionId();
   } else if (message.type === "ACTIVITY_LOG_ENTRY") {
     activityEntries.push(message.entry);
     renderActivityLog();
@@ -179,6 +218,7 @@ chrome.runtime.onMessage.addListener((message) => {
 document.addEventListener("DOMContentLoaded", async () => {
   setupEventListeners();
   await loadStatus();
+  await loadSessionId();
   await loadActivityLog();
 });
 //# sourceMappingURL=popup.js.map

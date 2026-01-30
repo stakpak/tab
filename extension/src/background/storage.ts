@@ -1,84 +1,32 @@
 /**
  * Storage Module
  * 
- * Handles caching and retrieval of browser endpoint from chrome.storage.local.
- * The endpoint is cached to avoid unnecessary native messaging calls.
+ * Handles caching and retrieval of session ID from chrome.storage.local.
+ * Session IDs are cached per windowId to support multiple windows.
+ * ONE WINDOW = ONE SESSION.
  */
-
-import type { BrowserEndpoint } from './native-messaging';
 
 // =============================================================================
 // Constants
 // =============================================================================
 
-const STORAGE_KEY_ENDPOINT = 'daemon_endpoint';
-const STORAGE_KEY_SESSION_ID = 'daemon_session_id';
+const STORAGE_KEY_PREFIX = 'session_';
 
 // =============================================================================
 // Public API
 // =============================================================================
 
 /**
- * Get cached browser endpoint from storage.
+ * Get cached session ID for a specific window.
  * 
- * @returns Promise resolving to cached endpoint, or null if not cached
- */
-export function getCachedEndpoint(): Promise<BrowserEndpoint | null> {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(STORAGE_KEY_ENDPOINT, (result) => {
-      const stored = result[STORAGE_KEY_ENDPOINT];
-
-      // Validate stored value
-      if (
-        stored &&
-        typeof stored === 'object' &&
-        typeof stored.ip === 'string' &&
-        typeof stored.port === 'number'
-      ) {
-        resolve({ ip: stored.ip, port: stored.port });
-      } else {
-        resolve(null);
-      }
-    });
-  });
-}
-
-/**
- * Cache browser endpoint to storage.
- * 
- * @param endpoint - The endpoint to cache
- * @returns Promise resolving when cached
- */
-export function setCachedEndpoint(endpoint: BrowserEndpoint): Promise<void> {
-  return new Promise((resolve) => {
-    chrome.storage.local.set({ [STORAGE_KEY_ENDPOINT]: endpoint }, () => {
-      resolve();
-    });
-  });
-}
-
-/**
- * Clear cached endpoint from storage.
- * 
- * @returns Promise resolving when cleared
- */
-export function clearCachedEndpoint(): Promise<void> {
-  return new Promise((resolve) => {
-    chrome.storage.local.remove(STORAGE_KEY_ENDPOINT, () => {
-      resolve();
-    });
-  });
-}
-
-/**
- * Get cached session ID from storage.
- * 
+ * @param windowId - The Chrome window ID
  * @returns Promise resolving to cached session ID, or null if not cached
  */
-export function getCachedSessionId(): Promise<string | null> {
+export function getCachedSessionId(windowId: number): Promise<string | null> {
+  const key = `${STORAGE_KEY_PREFIX}${windowId}`;
   return new Promise((resolve) => {
-    chrome.storage.local.get(STORAGE_KEY_SESSION_ID, (result) => {
-      const stored = result[STORAGE_KEY_SESSION_ID];
+    chrome.storage.local.get(key, (result) => {
+      const stored = result[key];
       if (typeof stored === 'string' && stored.length > 0) {
         resolve(stored);
       } else {
@@ -89,27 +37,31 @@ export function getCachedSessionId(): Promise<string | null> {
 }
 
 /**
- * Cache session ID to storage.
+ * Cache session ID for a specific window.
  * 
+ * @param windowId - The Chrome window ID
  * @param sessionId - The session ID to cache
  * @returns Promise resolving when cached
  */
-export function setCachedSessionId(sessionId: string): Promise<void> {
+export function setCachedSessionId(windowId: number, sessionId: string): Promise<void> {
+  const key = `${STORAGE_KEY_PREFIX}${windowId}`;
   return new Promise((resolve) => {
-    chrome.storage.local.set({ [STORAGE_KEY_SESSION_ID]: sessionId }, () => {
+    chrome.storage.local.set({ [key]: sessionId }, () => {
       resolve();
     });
   });
 }
 
 /**
- * Clear cached session ID from storage.
+ * Clear cached session ID for a specific window.
  * 
+ * @param windowId - The Chrome window ID
  * @returns Promise resolving when cleared
  */
-export function clearCachedSessionId(): Promise<void> {
+export function clearCachedSessionId(windowId: number): Promise<void> {
+  const key = `${STORAGE_KEY_PREFIX}${windowId}`;
   return new Promise((resolve) => {
-    chrome.storage.local.remove(STORAGE_KEY_SESSION_ID, () => {
+    chrome.storage.local.remove(key, () => {
       resolve();
     });
   });

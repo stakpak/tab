@@ -200,7 +200,7 @@ export interface ResponseData {
 
 /**
  * Command sent from agent to extension via WebSocket
- * 
+ *
  * TODO: Add session_assignment message type for daemon handshake.
  * When extension connects, daemon responds with session_assigned containing
  * the final session_id which extension must cache in chrome.storage.
@@ -209,6 +209,16 @@ export interface AgentCommand {
   id: string;
   type: CommandType;
   params?: CommandParams;
+}
+
+/**
+ * Response sent from extension to agent via WebSocket
+ */
+export interface AgentResponse {
+  id: string;
+  success: boolean;
+  error?: string;
+  data?: ResponseData;
 }
 
 /**

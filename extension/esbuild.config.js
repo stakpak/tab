@@ -11,7 +11,7 @@ const commonConfig = {
   target: 'es2022',
   format: 'esm',
   define: {
-    'process.env.WS_URL': JSON.stringify(process.env.WS_URL || 'ws://localhost:8080'),
+    'process.env.WS_URL': JSON.stringify(process.env.WS_URL || 'ws://localhost:9222'),
   },
 };
 

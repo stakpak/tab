@@ -14,7 +14,7 @@ export enum ConnectionState {
 }
 
 export interface WebSocketManager {
-  connect(): void;
+  connect(): Promise<void>;
   disconnect(): void;
   send(response: AgentResponse): void;
   isConnected(): boolean;
@@ -126,7 +126,7 @@ export function createWebSocketManager(
   }
 
   const manager: WebSocketManager = {
-    connect() {
+    async connect() {
       if (state === ConnectionState.CONNECTING) {
         console.log('[WebSocket] Already connecting');
         return;
@@ -144,8 +144,8 @@ export function createWebSocketManager(
       setState(ConnectionState.CONNECTING);
       shouldReconnect = true;
 
-      // Load cached session ID for potential reattachment
-      const cachedSessionId = await getCachedSessionId();
+      // Load cached session ID for potential reattachment (per-window)
+      const cachedSessionId = await getCachedSessionId(windowId);
 
       // Connect to generic endpoint - daemon assigns session via handshake
       const wsUrl = `${config.websocketUrl}/ws`;
@@ -185,7 +185,7 @@ export function createWebSocketManager(
 
           // Handle session assignment from daemon
           if (isSessionAssignedMessage(payload)) {
-            setCachedSessionId(payload.sessionId);
+            setCachedSessionId(windowId, payload.sessionId);
             console.log(`[WebSocket:Window${windowId}] Session assigned: ${payload.sessionId}`);
             return;
           }

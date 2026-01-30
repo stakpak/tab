@@ -364,7 +364,9 @@ export class TabDaemon {
     this.sessionManager.setBrowserProcess(sessionId, null);
 
     // Update session state if extension is not connected
-    if (!session.extensionConnection) {
+    // BUT: Keep awaiting_extension state - browser exit (code 0) is expected
+    // when Chrome is already running (it just opens a new window and exits)
+    if (!session.extensionConnection && session.state !== "awaiting_extension") {
       this.sessionManager.updateSessionState(sessionId, "disconnected");
     }
 

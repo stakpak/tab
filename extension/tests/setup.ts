@@ -19,6 +19,19 @@ const chromeMock = {
   windows: {
     update: vi.fn(),
   },
+  storage: {
+    local: {
+      get: vi.fn((key: string, callback: (result: Record<string, unknown>) => void) => {
+        callback({});
+      }),
+      set: vi.fn((_data: Record<string, unknown>, callback: () => void) => {
+        callback();
+      }),
+      remove: vi.fn((_key: string, callback: () => void) => {
+        callback();
+      }),
+    },
+  },
 };
 
 Object.defineProperty(globalThis, 'chrome', {

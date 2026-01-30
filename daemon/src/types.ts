@@ -195,15 +195,10 @@ export interface WsMessage {
  * If invalid/absent, daemon uses heuristic matching or creates new session.
  */
 export interface ExtensionRegistration {
-  /** Client-provided identifier (windowId or similar). Not the final session ID. */
-  sessionId: SessionId;
+  /** Browser window ID from Chrome. Used to track which window is which. */
+  windowId: number;
   /** Cached session ID from previous connection. Used for reattachment. */
   cachedSessionId: SessionId | undefined;
-  extensionVersion: string;
-  browserInfo: {
-    name: string;
-    version: string;
-  };
 }
 
 // =============================================================================

@@ -8,15 +8,15 @@ import type { AgentCommand, AgentResponse, ExtensionConfig } from '../shared/typ
 import type {
   PopupMessage,
   StatusResponse,
+  SessionIdResponse,
   ActivityLogEntry,
   ActivityLogResponse,
   ConnectionStatus,
 } from '../shared/messages';
+import { getCachedSessionId } from './storage';
 import { createWebSocketManager, type WebSocketManager, ConnectionState } from './websocket';
 import { routeCommand, clearTargetTabIfMatch } from './router';
 import { handleTabCommand } from './tabs';
-import { createEndpointManager, type EndpointManager } from './endpoint-manager';
-import { isNativeMessagingAvailable } from './native-messaging';
 
 // =============================================================================
 // STATE
@@ -26,9 +26,6 @@ const wsManagers = new Map<number, WebSocketManager>();
 let config: ExtensionConfig = { ...DEFAULT_CONFIG };
 let activityLog: ActivityLogEntry[] = [];
 const MAX_LOG_ENTRIES = 100;
-
-// Endpoint manager for daemon discovery via native messaging
-let endpointManager: EndpointManager | null = null;
 
 // =============================================================================
 // WEBSOCKET LIFECYCLE
@@ -49,7 +46,6 @@ function createManager(windowId: number): WebSocketManager {
     },
     onMaxReconnectAttemptsReached: () => {
       addLogEntry('error', `Window ${windowId}: Max reconnect attempts reached`);
-      void refreshEndpointAndReconnect(windowId);
     },
   });
 
@@ -61,68 +57,9 @@ function getOrCreateManager(windowId: number): WebSocketManager {
   return wsManagers.get(windowId) ?? createManager(windowId);
 }
 
-/**
- * Refresh daemon endpoint and reconnect a specific window.
- * Called when max reconnect attempts are reached.
- */
-async function refreshEndpointAndReconnect(windowId: number): Promise<void> {
-  if (!endpointManager) {
-    console.warn('[Background] No endpoint manager, cannot refresh');
-    return;
-  }
-
-  try {
-    addLogEntry('connection', 'Refreshing daemon endpoint...');
-    const endpoint = await endpointManager.refreshEndpoint();
-    const newUrl = endpointManager.buildWebSocketUrl(endpoint);
-
-    if (newUrl !== config.websocketUrl) {
-      config.websocketUrl = newUrl;
-      addLogEntry('connection', `Endpoint updated: ${newUrl}`);
-      const oldManager = wsManagers.get(windowId);
-      if (oldManager) {
-        oldManager.disconnect();
-        wsManagers.delete(windowId);
-      }
-
-      const newManager = createManager(windowId);
-      newManager.connect();
-    } else {
-      addLogEntry('connection', 'Endpoint unchanged, not reconnecting');
-    }
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    addLogEntry('error', `Endpoint refresh failed: ${msg}`);
-  }
-}
-
 async function initWebSocket(): Promise<void> {
-
-  // Initialize endpoint manager if native messaging is available
-  if (!endpointManager && isNativeMessagingAvailable()) {
-    endpointManager = createEndpointManager({
-      onEndpointResolved: (endpoint, fromCache) => {
-        const source = fromCache ? 'cache' : 'native messaging';
-        addLogEntry('connection', `Endpoint resolved from ${source}: ${endpoint.ip}:${endpoint.port}`);
-      },
-      onEndpointError: (error) => {
-        addLogEntry('error', `Endpoint discovery failed: ${error.message}`);
-      },
-    });
-  }
-
-  // Get daemon endpoint via native messaging (or use default)
-  if (endpointManager) {
-    try {
-      const endpoint = await endpointManager.getEndpoint();
-      config.websocketUrl = endpointManager.buildWebSocketUrl(endpoint);
-      console.log('[Background] Using daemon endpoint:', config.websocketUrl);
-    } catch (error) {
-      console.warn('[Background] Failed to get daemon endpoint, using default:', error);
-      addLogEntry('error', 'Using default endpoint - native messaging failed');
-    }
-  }
-
+  console.log('[Background] Connecting to daemon at:', config.websocketUrl);
+  
   const windows = await chrome.windows.getAll();
   windows.forEach((window) => {
     if (window.id === undefined) return;
@@ -234,6 +171,19 @@ function handlePopupMessage(
       return true;
     }
 
+    case 'GET_SESSION_ID': {
+      // Get the current window and return its session ID
+      chrome.windows.getCurrent().then(async (window) => {
+        if (window.id === undefined) {
+          sendResponse({ sessionId: null, windowId: -1 } as SessionIdResponse);
+          return;
+        }
+        const sessionId = await getCachedSessionId(window.id);
+        sendResponse({ sessionId, windowId: window.id } as SessionIdResponse);
+      });
+      return true; // Keep message channel open for async response
+    }
+
     default:
       return false;
   }
@@ -297,7 +247,7 @@ function broadcastStatusUpdate(): void {
 // Handle messages from popup
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   // Check if this is a popup message
-  if (message.type && ['GET_STATUS', 'CONNECT', 'DISCONNECT', 'UPDATE_URL', 'GET_ACTIVITY_LOG'].includes(message.type)) {
+  if (message.type && ['GET_STATUS', 'GET_SESSION_ID', 'CONNECT', 'DISCONNECT', 'UPDATE_URL', 'GET_ACTIVITY_LOG'].includes(message.type)) {
     return handlePopupMessage(message as PopupMessage, sendResponse);
   }
   return false;

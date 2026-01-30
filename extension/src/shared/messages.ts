@@ -52,6 +52,7 @@ export interface ContentResponse {
 
 export type PopupMessageType =
   | 'GET_STATUS'
+  | 'GET_SESSION_ID'
   | 'CONNECT'
   | 'DISCONNECT'
   | 'UPDATE_URL'
@@ -84,4 +85,9 @@ export interface ActivityLogResponse {
   entries: ActivityLogEntry[];
 }
 
-export type PopupResponse = StatusResponse | ActivityLogResponse | { success: boolean };
+export interface SessionIdResponse {
+  sessionId: string | null;
+  windowId: number;
+}
+
+export type PopupResponse = StatusResponse | ActivityLogResponse | SessionIdResponse | { success: boolean };

@@ -193,98 +193,89 @@ export class WsServer {
    * Handle extension registration with full session assignment protocol
    * 
    * Protocol flow:
-   * 1. Check if registration.cachedSessionId exists and is valid
-   *    → If yes: Reattach to that session (update connection, return session ID)
+   * 1. Check for awaiting_extension sessions (daemon-launched browsers)
+   *    → These take priority because the daemon explicitly started a browser for them
    * 
-   * 2. If no cached ID or invalid:
-   *    → Try heuristic matching (FIFO from awaiting_extension sessions)
-   *    → If match found: Assign to that session
+   * 2. Try cached session reattachment
+   *    → Each window caches its own sessionId, so this is safe
    * 
    * 3. If no match:
    *    → Create new virtual session
-   *    → Assign extension to new session
    * 
-   * 4. Send session_assigned message to extension with final session_id
-   *    → Extension caches this in chrome.storage for future reconnection
+   * 4. Send session_assigned message to extension
+   *    → Extension caches this per-windowId for future reconnection
    */
   private handleRegistration(ws: WebSocket, registration: ExtensionRegistration, sessionManager: SessionManager): SessionId {
     let sessionId: SessionId;
+    const windowId = registration.windowId;
 
-    // a. Try reattachment: if registration.cachedSessionId exists, look it up
-    if (registration.cachedSessionId) {
+    // a. Check for awaiting_extension sessions (daemon-launched browsers waiting)
+    const awaitingSessions = sessionManager.getAwaitingExtensionSessions();
+    if (awaitingSessions.length > 0) {
+      // Sort by createdAt (oldest first) and assign first awaiting session
+      awaitingSessions.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      const assignedSession = awaitingSessions[0];
+      console.log(`Assigning to awaiting session: ${assignedSession.name} (${assignedSession.id})`);
+      sessionId = assignedSession.id;
+    }
+    // b. Try cached session reattachment (safe since each window caches its own sessionId)
+    else if (registration.cachedSessionId) {
       const cachedSession = sessionManager.getSession(registration.cachedSessionId);
       if (cachedSession) {
         console.log(`Reattaching to cached session: ${registration.cachedSessionId}`);
         sessionId = registration.cachedSessionId;
       } else {
-        // Cached session not found, continue to heuristic matching
-        console.log(`Cached session ${registration.cachedSessionId} not found, trying heuristic matching`);
-        sessionId = this.assignViaHeuristicMatching(sessionManager);
+        console.log(`Cached session ${registration.cachedSessionId} not found, creating new session`);
+        sessionId = this.createNewSession(sessionManager);
       }
     } else {
-      // No cached session ID, try heuristic matching
-      sessionId = this.assignViaHeuristicMatching(sessionManager);
+      // No cached session ID and no awaiting sessions, create new session
+      sessionId = this.createNewSession(sessionManager);
     }
 
-    // Check if session already has a connection
+    // Check if session already has a stale connection
     const existingWs = this.connections.get(sessionId);
     if (existingWs && existingWs !== ws) {
-      // Close existing connection
-      console.log(`Closing existing connection for session: ${sessionId}`);
+      console.log(`Closing stale connection for session: ${sessionId}`);
       try {
         existingWs.close(4001, "New connection for session");
       } catch {
         // Ignore close errors
       }
-      // Clean up old connection's heartbeat
       this.stopHeartbeat(sessionId);
       this.connectionToSession.delete(existingWs);
     }
 
-    // Store new connection in map
+    // Store new connection
     this.connections.set(sessionId, ws);
     this.connectionToSession.set(ws, sessionId);
 
-    // Update session state in session manager
+    // Update session state
     sessionManager.setExtensionConnection(sessionId, ws);
 
-    // Start heartbeat for this connection
+    // Start heartbeat
     this.startHeartbeat(sessionId);
 
-    // Notify via onExtensionConnected
+    // Notify handler
     if (this.eventHandlers) {
       this.eventHandlers.onExtensionConnected(sessionId, ws);
     }
 
-    // e. Send session_assigned message
+    // Send session_assigned message
     try {
-      const assignedMessage = { type: "session_assigned", sessionId };
-      ws.send(JSON.stringify(assignedMessage));
+      ws.send(JSON.stringify({ type: "session_assigned", sessionId }));
     } catch (err) {
       console.error("Failed to send session_assigned message:", err);
     }
 
-    console.log(`Extension registered for session: ${sessionId}`);
+    console.log(`Extension registered for session: ${sessionId} (windowId: ${windowId})`);
     return sessionId;
   }
 
   /**
-   * Try to assign session via heuristic matching (FIFO from awaiting_extension sessions)
-   * Returns the assigned session ID, or creates a new session if none available
+   * Create a new session for an extension that doesn't match any existing session
    */
-  private assignViaHeuristicMatching(sessionManager: SessionManager): SessionId {
-    // b. Try heuristic matching: get awaiting sessions and sort by createdAt (oldest first)
-    const awaitingSessions = sessionManager.getAwaitingExtensionSessions();
-    if (awaitingSessions.length > 0) {
-      // Sort by createdAt (oldest first) and return first awaiting session
-      awaitingSessions.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
-      const assignedSession = awaitingSessions[0];
-      console.log(`Heuristic match: assigning to awaiting session ${assignedSession.id}`);
-      return assignedSession.id;
-    }
-
-    // c. No match, create new session
-    // Generate unique session name
+  private createNewSession(sessionManager: SessionManager): SessionId {
     const sessionName = `window-${Date.now()}`;
     const newSession = sessionManager.createSession(sessionName, undefined);
     console.log(`Created new session ${newSession.id} with name ${sessionName}`);
@@ -419,8 +410,8 @@ export class WsServer {
           ws.close(4000, "Server not ready");
           break;
         }
-        // Cast through unknown since WsMessage.payload type doesn't include ExtensionRegistration
-        this.handleRegistration(ws, message.payload as unknown as ExtensionRegistration, this.sessionManager);
+        // Extension sends register message directly (not wrapped in payload)
+        this.handleRegistration(ws, message as unknown as ExtensionRegistration, this.sessionManager);
         break;
 
       case "response":

@@ -13,7 +13,7 @@ class MockWebSocket {
   onerror: ((event: Event) => void) | null = null;
   onclose: (() => void) | null = null;
 
-  constructor(public url: string) {}
+  constructor(public url: string) { }
 
   send = vi.fn();
   close = vi.fn();
@@ -21,7 +21,7 @@ class MockWebSocket {
 
 describe('websocket manager', () => {
   const config: ExtensionConfig = {
-    websocketUrl: 'ws://localhost:8080',
+    websocketUrl: 'ws://localhost:9222',
     reconnectInterval: 10,
     maxReconnectAttempts: 3,
     heartbeatInterval: 1000,
