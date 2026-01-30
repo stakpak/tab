@@ -232,7 +232,7 @@ export class TabDaemon {
     // Session not found - need to create it
     if (!session) {
       const sessionName = command.sessionId || "default";
-      
+
       if (sessionName === "default") {
         // For default sessions, use profile-aware logic
         // Each profile has its own default session
@@ -594,7 +594,16 @@ async function main(): Promise<void> {
 
 // Run main if this is the entry point
 // Note: In ESM, we check if this module is being run directly
-const isMainModule = import.meta.url === `file://${process.argv[1]}`;
+// Run main if this is the entry point
+// Universal check for both ESM (tsc) and CJS (esbuild/pkg)
+import { fileURLToPath } from "node:url";
+
+const isMainModule =
+  // @ts-ignore
+  (typeof require !== "undefined" && require.main === module) ||
+  // @ts-ignore
+  (import.meta.url && process.argv[1] === fileURLToPath(import.meta.url));
+
 if (isMainModule) {
   main().catch((error) => {
     console.error("Fatal error:", error);

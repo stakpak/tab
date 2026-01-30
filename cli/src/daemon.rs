@@ -14,6 +14,9 @@ use crate::config::Config;
 use crate::error::{CliError, Result};
 use crate::ipc::IpcClient;
 
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+
 // =============================================================================
 // Constants
 // =============================================================================
@@ -77,13 +80,27 @@ fn start_daemon(config: &Config) -> Result<()> {
     // Spawn daemon as background process
     #[cfg(unix)]
     {
-        Command::new(&daemon_path)
-            .args(&args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|e| CliError::DaemonNotRunning(format!("failed to start daemon: {}", e)))?;
+        // Use setsid to start the daemon in a new session (detached from terminal)
+        // without exiting the parent process (CLI)
+        // unsafe block for setsid
+        unsafe {
+            Command::new(&daemon_path)
+                .args(&args)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .pre_exec(|| {
+                    // detaches the child from the terminal
+                    libc::setsid();
+                    Ok(())
+                })
+                .spawn()
+                .map_err(|e| {
+                    CliError::DaemonNotRunning(format!("failed to start daemon: {}", e))
+                })?;
+        }
+
+        Ok(())
     }
 
     #[cfg(windows)]
@@ -97,9 +114,9 @@ fn start_daemon(config: &Config) -> Result<()> {
             .creation_flags(0x00000008) // DETACHED_PROCESS
             .spawn()
             .map_err(|e| CliError::DaemonNotRunning(format!("failed to start daemon: {}", e)))?;
-    }
 
-    Ok(())
+        Ok(())
+    }
 }
 
 /// Wait for daemon to become ready (respond to ping)
