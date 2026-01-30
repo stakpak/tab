@@ -147,16 +147,7 @@ export type IpcMessageType = "command" | "response" | "ping" | "pong" | "get_end
  */
 export interface IpcMessage {
   type: IpcMessageType;
-  payload: Command | CommandResponse | BrowserEndpoint | ExtensionRegistrationResponse | null;
-}
-
-/**
- * Response to extension registration request
- */
-export interface ExtensionRegistrationResponse {
-  sessionId: SessionId;
-  ip: string;
-  port: number;
+  payload: Command | CommandResponse  | null;
 }
 
 // =============================================================================

@@ -12,8 +12,6 @@ import type {
   Command,
   CommandResponse,
   DaemonConfig,
-  BrowserEndpoint,
-  ExtensionRegistrationResponse,
 } from "./types.js";
 
 /**
@@ -27,10 +25,6 @@ const MESSAGE_DELIMITER = "\n";
  */
 export type CommandHandler = (command: Command) => Promise<CommandResponse>;
 
-/**
- * Callback type for handling extension registration requests
- */
-export type RegistrationHandler = () => Promise<ExtensionRegistrationResponse>;
 
 /**
  * IPC Server class
@@ -39,7 +33,6 @@ export type RegistrationHandler = () => Promise<ExtensionRegistrationResponse>;
 export class IpcServer {
   private server: Server | null = null;
   private commandHandler: CommandHandler | null = null;
-  private registrationHandler: RegistrationHandler | null = null;
   private activeConnections: Set<Socket> = new Set();
 
   constructor(private config: DaemonConfig) {}
@@ -114,16 +107,6 @@ export class IpcServer {
     }
     // Store the command handler
     this.commandHandler = handler;
-  }
-
-  /**
-   * Register the handler for extension registration requests
-   */
-  onRegistration(handler: RegistrationHandler): void {
-    if (typeof handler !== "function") {
-      throw new Error("Registration handler must be a function");
-    }
-    this.registrationHandler = handler;
   }
 
   // ===========================================================================
@@ -209,26 +192,6 @@ export class IpcServer {
         });
         break;
 
-      case "get_endpoint":
-        // Respond with daemon's WebSocket endpoint
-        const endpoint: BrowserEndpoint = {
-          ip: "127.0.0.1",
-          port: this.config.wsPort,
-        };
-        const endpointMessage: IpcMessage = {
-          type: "endpoint",
-          payload: endpoint,
-        };
-        socket.write(this.serializeMessage(endpointMessage), () => {
-          socket.end();
-        });
-        break;
-
-      case "register_extension":
-        // Extension requests session assignment
-        await this.handleExtensionRegistration(socket);
-        break;
-
       case "command":
         // Invoke command handler
         if (!this.commandHandler) {
@@ -269,46 +232,6 @@ export class IpcServer {
           success: false,
           error: `Unknown message type: ${message.type}`,
         });
-    }
-  }
-
-  /**
-   * Handle extension registration request
-   * Assigns a session to the requesting extension
-   */
-  private async handleExtensionRegistration(socket: Socket): Promise<void> {
-    if (!this.registrationHandler) {
-      const errorMessage: IpcMessage = {
-        type: "response",
-        payload: { id: "unknown", success: false, error: "No registration handler registered" },
-      };
-      socket.write(this.serializeMessage(errorMessage), () => {
-        socket.end();
-      });
-      return;
-    }
-
-    try {
-      const registration = await this.registrationHandler();
-      const registrationMessage: IpcMessage = {
-        type: "registration",
-        payload: registration,
-      };
-      socket.write(this.serializeMessage(registrationMessage), () => {
-        socket.end();
-      });
-    } catch (err) {
-      const errorMessage: IpcMessage = {
-        type: "response",
-        payload: {
-          id: "unknown",
-          success: false,
-          error: err instanceof Error ? err.message : "Registration failed",
-        },
-      };
-      socket.write(this.serializeMessage(errorMessage), () => {
-        socket.end();
-      });
     }
   }
 
