@@ -22,12 +22,21 @@ export const DEFAULT_SESSION_NAME = "default";
 /**
  * Session Manager class
  * Handles creation, retrieval, and state management of sessions
+ * 
+ * SESSION MODEL:
+ * - ONE WINDOW = ONE SESSION. Each browser window has its own unique session ID.
+ * - 1 profile → many sessions (windows). Multiple windows can share the same profile.
+ * - Sessions are created either by CLI command or when extension connects.
  */
 export class SessionManager {
   private sessions: Map<SessionId, Session> = new Map();
+  // Each session ID maps to one browser window
   private sessionsByName: Map<string, SessionId> = new Map();
+  // Maps profile directory to default session ID for that profile
+  // Key is profileDir (or "__default__" for undefined profile)
+  private profileDefaultSessions: Map<string, SessionId> = new Map();
 
-  constructor(private config: DaemonConfig) {}
+  constructor(private config: DaemonConfig) { }
 
   // ===========================================================================
   // Session CRUD Operations
@@ -35,8 +44,12 @@ export class SessionManager {
 
   /**
    * Create a new session
+   * 
+   * @param name - Session name (e.g., "default", "work-session")
+   * @param profileDir - Browser profile directory. Undefined means default profile.
+   * @returns The created session
    */
-  createSession(name: string): Session {
+  createSession(name: string, profileDir: string | undefined = undefined): Session {
     // Validate session name
     if (!this.validateSessionName(name)) {
       throw new Error(`Invalid session name: "${name}". Must be alphanumeric with dashes/underscores, 1-64 characters.`);
@@ -54,6 +67,7 @@ export class SessionManager {
     const session: Session = {
       id,
       name,
+      profileDir,
       state: "pending",
       createdAt: new Date(),
       extensionConnection: null,
@@ -65,6 +79,12 @@ export class SessionManager {
 
     // Store name -> ID mapping
     this.sessionsByName.set(name, id);
+
+    // If this is a default session, track it per profile
+    if (name === DEFAULT_SESSION_NAME) {
+      const profileKey = profileDir ?? "__default__";
+      this.profileDefaultSessions.set(profileKey, id);
+    }
 
     return session;
   }
@@ -88,14 +108,27 @@ export class SessionManager {
   }
 
   /**
-   * Get or create the default session
+   * Get or create the default session for a profile
+   * 
+   * @param profileDir - Browser profile directory. Undefined means default profile.
+   * @returns The default session for this profile
    */
-  getOrCreateDefaultSession(): Session {
-    const existing = this.getSessionByName(DEFAULT_SESSION_NAME);
-    if (existing) {
-      return existing;
+  getOrCreateDefaultSession(profileDir: string | undefined = undefined): Session {
+    const profileKey = profileDir ?? "__default__";
+    
+    // Check if we already have a default session for this profile
+    const existingId = this.profileDefaultSessions.get(profileKey);
+    if (existingId) {
+      const existing = this.getSession(existingId);
+      if (existing) {
+        return existing;
+      }
+      // Session was deleted, clean up the stale reference
+      this.profileDefaultSessions.delete(profileKey);
     }
-    return this.createSession(DEFAULT_SESSION_NAME);
+    
+    // Create new default session for this profile
+    return this.createSession(DEFAULT_SESSION_NAME, profileDir);
   }
 
   /**
@@ -129,6 +162,14 @@ export class SessionManager {
     // Remove from maps
     this.sessions.delete(sessionId);
     this.sessionsByName.delete(session.name);
+
+    // Clean up profile default session reference if this was a default session
+    if (session.name === DEFAULT_SESSION_NAME) {
+      const profileKey = session.profileDir ?? "__default__";
+      if (this.profileDefaultSessions.get(profileKey) === sessionId) {
+        this.profileDefaultSessions.delete(profileKey);
+      }
+    }
 
     return true;
   }
@@ -223,6 +264,21 @@ export class SessionManager {
     // Sort by createdAt (oldest first) and return first
     awaiting.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
     return awaiting[0];
+  }
+
+  /**
+   * Get the default session for a profile (if it exists)
+   * 
+   * @param profileDir - Browser profile directory. Undefined means default profile.
+   * @returns The default session for this profile, or null if not found
+   */
+  getDefaultSessionByProfile(profileDir: string | undefined): Session | null {
+    const profileKey = profileDir ?? "__default__";
+    const sessionId = this.profileDefaultSessions.get(profileKey);
+    if (!sessionId) {
+      return null;
+    }
+    return this.getSession(sessionId);
   }
 
   // ===========================================================================

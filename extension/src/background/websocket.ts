@@ -142,9 +142,13 @@ export function createWebSocketManager(
 
       setState(ConnectionState.CONNECTING);
       shouldReconnect = true;
-      // Connect to window-specific endpoint: ws://host:port/ws/session/{windowId}
+      // ONE WINDOW = ONE SESSION. Each browser window gets its own session.
+      // TODO: Change URL to generic endpoint (remove windowId from path)
+      // The daemon will assign a unique session ID via handshake protocol.
+      // Multiple windows = multiple sessions, even with same profile.
+      // TODO: On connect, send cached session_id if available (from chrome.storage)
       const wsUrl = `${config.websocketUrl}/ws/session/${windowId}`;
-      console.log(`[WebSocket:${windowId}] Connecting to`, wsUrl);
+      console.log(`[WebSocket:Window${windowId}] Connecting to daemon...`);
 
       try {
         ws = new WebSocket(wsUrl);
@@ -152,7 +156,10 @@ export function createWebSocketManager(
         ws.onopen = () => {
           setState(ConnectionState.CONNECTED);
           reconnectAttempts = 0;
-          console.log(`[WebSocket:${windowId}] Connected`);
+          console.log(`[WebSocket:Window${windowId}] Connected - requesting session assignment`);
+          // TODO: Send registration message to get/reattach session
+          // Format: { type: 'register', windowId: number, cachedSessionId: string | undefined }
+          // Daemon assigns unique session ID - ONE WINDOW = ONE SESSION
           startHeartbeat();
         };
 
@@ -170,6 +177,11 @@ export function createWebSocketManager(
             handlePong();
             return;
           }
+
+          // TODO: Handle session_assigned message from daemon
+          // When received, persist session_id to chrome.storage for reconnection
+          // Format: { type: 'session_assigned', sessionId: string }
+          // TODO: Import and use setCachedSessionId from './storage'
 
           const command = parseCommand(payload);
           if (!command) {

@@ -59,6 +59,7 @@ impl CommandBuilder {
         Command {
             id: generate_command_id(),
             session_id: self.session_id.clone(),
+            profile: None, // TODO: Get profile from CLI args or config
             command_type,
             params: params_opt,
             timestamp: current_timestamp(),

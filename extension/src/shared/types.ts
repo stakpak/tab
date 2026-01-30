@@ -1,6 +1,12 @@
 /**
  * Protocol Types
- * Defines the WebSocket communication protocol between external agents and the extension
+ * Defines the WebSocket communication protocol between daemon and extension
+ * 
+ * SESSION MODEL:
+ * - ONE WINDOW = ONE SESSION. Each browser window gets a unique session ID.
+ * - Multiple windows can share the same profile (1 profile → many sessions).
+ * - Session ID is assigned by daemon during handshake, cached by extension.
+ * - Extension reconnects with cached session_id for session reattachment.
  */
 
 // =============================================================================
@@ -155,12 +161,18 @@ export type CommandParams =
   | MouseParams;
 
 /**
- * Command sent from agent to extension via WebSocket
+ * Configuration
+ * 
+ * TODO: Add sessionStorageKey field for chrome.storage key name
+ * used to persist the cached session_id.
  */
-export interface AgentCommand {
-  id: string;
-  type: CommandType;
-  params?: CommandParams;
+export interface ExtensionConfig {
+  websocketUrl: string;
+  reconnectInterval: number;
+  maxReconnectAttempts: number;
+  heartbeatInterval: number;
+  heartbeatTimeout: number;
+  // TODO: Add sessionStorageKey for chrome.storage session persistence
 }
 
 // =============================================================================
@@ -187,14 +199,27 @@ export interface ResponseData {
 }
 
 /**
- * Response sent from extension to agent via WebSocket
+ * Command sent from agent to extension via WebSocket
+ * 
+ * TODO: Add session_assignment message type for daemon handshake.
+ * When extension connects, daemon responds with session_assigned containing
+ * the final session_id which extension must cache in chrome.storage.
  */
-export interface AgentResponse {
+export interface AgentCommand {
   id: string;
-  success: boolean;
-  data?: ResponseData;
-  error?: string;
+  type: CommandType;
+  params?: CommandParams;
 }
+
+/**
+ * TODO: Add SessionAssignment message type for daemon handshake response.
+ * Sent by daemon to extension after connection establishment.
+ * Extension must persist this session_id for reconnection.
+ */
+// export interface SessionAssignment {
+//   type: 'session_assigned';
+//   sessionId: string;
+// }
 
 // =============================================================================
 // REF REGISTRY (Snapshot-local element references)

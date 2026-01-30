@@ -78,45 +78,34 @@ export class TabDaemon {
   // Daemon Lifecycle
   // ===========================================================================
 
-  /**
-   * Start the daemon
-   */
   async start(): Promise<void> {
-    // Check if already running
+
     if (this.isRunning) {
       throw new Error("Daemon is already running");
     }
 
-    // Set up component event handlers
     this.setupEventHandlers();
 
-    // Start WebSocket server
     await this.wsServer.start();
     console.log(`WebSocket server listening on port ${this.config.wsPort}`);
 
-    // Start IPC server
     await this.ipcServer.start();
     console.log(`IPC server listening on ${this.config.ipcSocketPath}`);
 
-    // Set up signal handlers for graceful shutdown
     this.setupSignalHandlers();
 
-    // Set isRunning to true
     this.isRunning = true;
 
     console.log("tab-daemon started successfully");
   }
 
-  /**
-   * Stop the daemon gracefully
-   */
+
   async stop(): Promise<void> {
-    // Check if running
+
     if (!this.isRunning) {
       return;
     }
 
-    // Prevent multiple concurrent shutdowns
     if (this.shutdownPromise) {
       return this.shutdownPromise;
     }
@@ -131,7 +120,6 @@ export class TabDaemon {
   private async performShutdown(): Promise<void> {
     console.log("Stopping tab-daemon...");
 
-    // Set isRunning to false
     this.isRunning = false;
 
     // Cancel all pending commands
@@ -145,15 +133,12 @@ export class TabDaemon {
       await this.waitForCommandsWithTimeout(SHUTDOWN_TIMEOUT);
     }
 
-    // Kill all browser processes
     console.log("Stopping browser processes...");
     await this.browserManager.killAllBrowsers();
 
-    // Stop IPC server
     console.log("Stopping IPC server...");
     await this.ipcServer.stop();
 
-    // Stop WebSocket server
     console.log("Stopping WebSocket server...");
     await this.wsServer.stop();
 
@@ -213,12 +198,10 @@ export class TabDaemon {
     });
   }
 
-  /**
-   * Handle incoming command from CLI
-   */
+  //TODO: Need To Change This
   private async handleCliCommand(command: Command): Promise<CommandResponse> {
-    // Check if daemon is running
-    if (!this.isRunning) {
+
+    if (!this.isActive()) {
       return {
         id: command.id,
         success: false,
@@ -226,14 +209,26 @@ export class TabDaemon {
       };
     }
 
-    // Validate session exists or create default
     let session = this.sessionManager.getSession(command.sessionId);
+
     if (!session) {
-      // Try to get by name (CLI might send session name instead of ID)
       session = this.sessionManager.getSessionByName(command.sessionId);
     }
+
+    // Command will come from the cli having a profile directory or (undefined) default profile
+    // You don't need the profile directory to route already existing sessions except default session
+    // You need the profile directory to create a new session
+
+    // So Logic Is 
+    // Check if session exists by id or name
+    // If this id is not found and not default session id, create a new session with this id
+    // If this id is not found and default session id, check the default session for this profile
+    // If The profile is undefined, assume the default profile
+    // If The default session is not found, create a new default session
+    // If The default session is found, use it
+    // If the sessionId is found, use it
+
     if (!session) {
-      // If sessionId is "default" or empty, use/create default session
       if (!command.sessionId || command.sessionId === "default") {
         session = this.sessionManager.getOrCreateDefaultSession();
       } else {
@@ -245,18 +240,21 @@ export class TabDaemon {
       }
     }
 
-    // Always update command with actual session ID (CLI might have sent name)
     command = { ...command, sessionId: session.id };
 
-    // Submit command to router
     return this.commandRouter.submitCommand(command);
   }
 
   /**
    * Handle extension connection
+   * 
+   * ONE WINDOW = ONE SESSION: Each WebSocket connection from a browser window
+   * represents a unique session. Multiple windows = multiple sessions.
+   * The daemon assigns a unique session ID via the handshake protocol.
    */
   private handleExtensionConnected(sessionId: SessionId, ws: WebSocket): void {
-    // Check if session exists, create if not (extension might connect before CLI creates session)
+
+    // Each extension connection is a separate browser window (separate session)
     let session = this.sessionManager.getSession(sessionId);
     if (!session) {
       // Try to get by name

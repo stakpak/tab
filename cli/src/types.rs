@@ -74,6 +74,9 @@ pub enum CommandType {
 pub struct Command {
     pub id: CommandId,
     pub session_id: SessionId,
+    /// Browser profile directory. None means default profile.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
     #[serde(rename = "type")]
     pub command_type: CommandType,
     /// Command parameters (renamed from 'payload' to align with protocol)

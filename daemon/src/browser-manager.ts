@@ -90,9 +90,15 @@ export class BrowserManager {
 
   /**
    * Launch a new browser instance for a session
+   * 
+   * TODO: Use options.profileDir to set Chrome's --user-data-dir flag.
+   * If profileDir is provided, pass it as --user-data-dir=<profileDir>.
+   * If profileDir is undefined, use default profile (no flag needed).
+   * This ensures each profile has isolated browser state (cookies, localStorage, etc.).
    */
   async launchBrowser(options: BrowserLaunchOptions): Promise<ChildProcess> {
     const { sessionId } = options;
+    // TODO: Extract profileDir from options when implemented
 
     // Check if session already has a browser
     if (this.hasBrowser(sessionId)) {
@@ -111,6 +117,7 @@ export class BrowserManager {
     }
 
     // Build command line arguments
+    // TODO: Pass profileDir to buildBrowserArgs so it can add --user-data-dir flag
     const args = this.buildBrowserArgs(options);
 
     // Spawn browser process
@@ -324,6 +331,13 @@ export class BrowserManager {
 
   /**
    * Build command line arguments for browser launch
+   * 
+   * TODO: Add support for profileDir option to set --user-data-dir.
+   * When profileDir is provided:
+   *   - Use it as --user-data-dir=<profileDir>
+   * When profileDir is undefined:
+   *   - Use default Chrome profile (no flag needed)
+   * This ensures sessions are isolated by profile directory.
    */
   private buildBrowserArgs(options: BrowserLaunchOptions): string[] {
     const args: string[] = [];
@@ -340,9 +354,9 @@ export class BrowserManager {
       "--disable-renderer-backgrounding",
     );
 
-    // Add user data directory if specified
-    if (options.userDataDir) {
-      args.push(`--user-data-dir=${options.userDataDir}`);
+    // Add profile directory if specified
+    if (options.profileDir) {
+      args.push(`--user-data-dir=${options.profileDir}`);
     }
 
     // Add any user-specified args

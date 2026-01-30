@@ -148,10 +148,14 @@ export class WsServer {
 
   /**
    * Handle a new WebSocket connection
+   * 
+   * ONE WINDOW = ONE SESSION: Each WebSocket connection represents a browser window.
+   * The daemon will assign a unique session ID via handshake protocol.
    */
   private handleConnection(ws: WebSocket, req: any): void {
-    // Extract session ID from URL path if present
-    // Expected format: /ws/session/{sessionId}
+    // TODO: Remove URL-based session ID extraction
+    // New protocol: extension connects to generic endpoint, daemon assigns session
+    // Expected format (legacy): /ws/session/{sessionId}
     if (req && req.url) {
       const urlMatch = req.url.match(/\/ws\/session\/([^/]+)/);
       if (urlMatch && urlMatch[1]) {
@@ -159,8 +163,10 @@ export class WsServer {
         console.log(`Extension connecting with session ID from URL: ${autoSessionId}`);
         
         // Auto-register the session
+        // TODO: Extract cachedSessionId from URL query params or headers when available
         const registration: ExtensionRegistration = {
           sessionId: autoSessionId,
+          cachedSessionId: undefined, // Will be provided by extension in registration message
           extensionVersion: "unknown",
           browserInfo: { name: "unknown", version: "unknown" }
         };
@@ -197,9 +203,27 @@ export class WsServer {
 
   /**
    * Handle extension registration
+   * 
+   * TODO: Implement session reattachment and heuristic matching protocol.
+   * 
+   * Protocol flow:
+   * 1. Check if registration.cachedSessionId exists and is valid
+   *    → If yes: Reattach to that session (update connection, return session ID)
+   * 
+   * 2. If no cached ID or invalid:
+   *    → Try heuristic matching (FIFO from awaiting_extension sessions)
+   *    → If match found: Assign to that session
+   * 
+   * 3. If no match:
+   *    → Create new virtual session
+   *    → Assign extension to new session
+   * 
+   * 4. Send session_assigned message to extension with final session_id
+   *    → Extension caches this in chrome.storage for future reconnection
    */
   private handleRegistration(ws: WebSocket, registration: ExtensionRegistration): void {
     const { sessionId } = registration;
+    // TODO: Use registration.cachedSessionId for reattachment protocol
 
     // Validate registration data
     if (!sessionId || typeof sessionId !== "string") {

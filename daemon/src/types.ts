@@ -22,12 +22,18 @@ export type SessionId = string;
 export type SessionState = "active" | "disconnected" | "pending" | "awaiting_extension";
 
 /**
- * A session represents a persistent browser context.
- * Sessions are logical routing identifiers - they do NOT map to browser profiles.
+ * A session represents a browser window instance.
+ * ONE WINDOW = ONE SESSION. Each browser window has its own unique session ID.
+ * 
+ * Multiple windows can share the same profile (1 profile → many windows/sessions).
+ * The 'default' session name is scoped per profile, but each window still has
+ * its own unique session ID even if they share the same profile.
  */
 export interface Session {
   id: SessionId;
   name: string;
+  /** Browser profile directory. Undefined means default profile. */
+  profileDir: string | undefined;
   state: SessionState;
   createdAt: Date;
   extensionConnection: WebSocket | null;
@@ -94,10 +100,16 @@ export type CommandType =
 
 /**
  * Command sent from CLI to daemon
+ * 
+ * The profile field specifies which browser profile directory to use.
+ * This is required when creating new sessions (especially default sessions).
+ * Profile is undefined for default profile, or a path to the profile directory.
  */
 export interface Command {
   id: CommandId;
   sessionId: SessionId;
+  /** Browser profile directory. Undefined means default profile. */
+  profile: string | undefined;
   type: CommandType;
   params?: Record<string, unknown>;
   timestamp: Date;
@@ -147,7 +159,7 @@ export type IpcMessageType = "command" | "response" | "ping" | "pong" | "get_end
  */
 export interface IpcMessage {
   type: IpcMessageType;
-  payload: Command | CommandResponse  | null;
+  payload: Command | CommandResponse | null;
 }
 
 // =============================================================================
@@ -177,9 +189,16 @@ export interface WsMessage {
 
 /**
  * Extension registration payload
+ * 
+ * When extension reconnects, it sends its cached session_id for reattachment.
+ * If valid, daemon reattaches to that session.
+ * If invalid/absent, daemon uses heuristic matching or creates new session.
  */
 export interface ExtensionRegistration {
+  /** Client-provided identifier (windowId or similar). Not the final session ID. */
   sessionId: SessionId;
+  /** Cached session ID from previous connection. Used for reattachment. */
+  cachedSessionId: SessionId | undefined;
   extensionVersion: string;
   browserInfo: {
     name: string;
@@ -193,11 +212,16 @@ export interface ExtensionRegistration {
 
 /**
  * Browser launch options
+ * 
+ * profileDir specifies which browser profile directory to use.
+ * This maps to Chrome's --user-data-dir flag.
+ * Undefined means use default profile.
  */
 export interface BrowserLaunchOptions {
   sessionId: SessionId;
+  /** Browser profile directory. Undefined means default profile. */
+  profileDir: string | undefined;
   executablePath?: string;
-  userDataDir?: string;
   args?: string[];
 }
 

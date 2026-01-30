@@ -178,6 +178,16 @@ export class CommandRouter {
   /**
    * Launch browser for session, wait for extension to connect, then execute command
    */
+  /**
+   * Launch browser for session, wait for extension to connect, then execute command
+   * 
+   * TODO: Pass profile directory from session to browser launch.
+   * When launching browser:
+   *   1. Get session from sessionManager
+   *   2. Extract session.profileDir
+   *   3. Pass profileDir to launchBrowser({ sessionId, profileDir })
+   * This ensures browser uses correct profile directory for isolated sessions.
+   */
   private async launchBrowserAndExecute(command: Command): Promise<CommandResponse> {
     const { sessionId } = command;
 
@@ -206,9 +216,11 @@ export class CommandRouter {
       // Mark session as awaiting extension
       this.sessionManager.updateSessionState(sessionId, "awaiting_extension");
 
-      // Launch browser
+      // Launch browser with profile directory from session
+      const session = this.sessionManager.getSession(sessionId);
+      const profileDir = session?.profileDir;
       try {
-        await this.browserManager.launchBrowser({ sessionId });
+        await this.browserManager.launchBrowser({ sessionId, profileDir });
       } catch (err) {
         this.sessionManager.updateSessionState(sessionId, "disconnected");
         return {
