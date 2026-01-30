@@ -180,6 +180,9 @@ export class TabDaemon {
     // Wire IPC server command handler to command router
     this.ipcServer.onCommand((command) => this.handleCliCommand(command));
 
+    // Wire WebSocket server to session manager for session assignment
+    this.wsServer.setSessionManager(this.sessionManager);
+
     // Wire WebSocket server events to session manager and command router
     this.wsServer.setEventHandlers({
       onExtensionConnected: (sessionId, ws) => this.handleExtensionConnected(sessionId, ws),
