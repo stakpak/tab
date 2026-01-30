@@ -759,13 +759,13 @@ function handlePopupMessage(message, sendResponse) {
       return true;
     }
     case "GET_SESSION_ID": {
-      chrome.windows.getCurrent().then(async (window2) => {
-        if (window2.id === void 0) {
-          sendResponse({ sessionId: null, windowId: -1 });
-          return;
-        }
-        const sessionId = await getCachedSessionId(window2.id);
-        sendResponse({ sessionId, windowId: window2.id });
+      const windowId = message.payload?.windowId;
+      if (windowId === void 0) {
+        sendResponse({ sessionId: null, windowId: -1 });
+        return true;
+      }
+      getCachedSessionId(windowId).then((sessionId) => {
+        sendResponse({ sessionId, windowId });
       });
       return true;
     }

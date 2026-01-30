@@ -172,14 +172,14 @@ function handlePopupMessage(
     }
 
     case 'GET_SESSION_ID': {
-      // Get the current window and return its session ID
-      chrome.windows.getCurrent().then(async (window) => {
-        if (window.id === undefined) {
-          sendResponse({ sessionId: null, windowId: -1 } as SessionIdResponse);
-          return;
-        }
-        const sessionId = await getCachedSessionId(window.id);
-        sendResponse({ sessionId, windowId: window.id } as SessionIdResponse);
+      // Use windowId from payload (popup provides its own window context)
+      const windowId = message.payload?.windowId;
+      if (windowId === undefined) {
+        sendResponse({ sessionId: null, windowId: -1 } as SessionIdResponse);
+        return true;
+      }
+      getCachedSessionId(windowId).then((sessionId) => {
+        sendResponse({ sessionId, windowId } as SessionIdResponse);
       });
       return true; // Keep message channel open for async response
     }

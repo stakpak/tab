@@ -236,7 +236,16 @@ async function loadStatus(): Promise<void> {
 
 async function loadSessionId(): Promise<void> {
   try {
-    const response = await sendMessage<SessionIdResponse>({ type: 'GET_SESSION_ID' });
+    // Get current window ID first (popup runs in context of its window)
+    const currentWindow = await chrome.windows.getCurrent();
+    if (!currentWindow.id) {
+      updateSessionId(null);
+      return;
+    }
+    const response = await sendMessage<SessionIdResponse>({ 
+      type: 'GET_SESSION_ID',
+      payload: { windowId: currentWindow.id }
+    });
     updateSessionId(response.sessionId);
   } catch (error) {
     console.error('Failed to load session ID:', error);

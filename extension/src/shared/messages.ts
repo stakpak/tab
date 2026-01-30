@@ -62,6 +62,7 @@ export interface PopupMessage {
   type: PopupMessageType;
   payload?: {
     url?: string;
+    windowId?: number;
   };
 }
 

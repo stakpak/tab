@@ -162,8 +162,17 @@ export class CommandRouter {
 
     // Check if session has active extension connection
     if (!this.wsServer.isConnected(command.sessionId)) {
-      // Auto-launch browser and wait for extension to connect
-      return this.launchBrowserAndExecute(command);
+      // Only auto-launch browser for navigation commands
+      const browserLaunchCommands: Set<CommandType> = new Set(["navigate", "tab_new", "open"]);
+      if (browserLaunchCommands.has(command.type)) {
+        return this.launchBrowserAndExecute(command);
+      }
+      // For other commands, fail immediately - browser must already be running
+      return {
+        id: command.id,
+        success: false,
+        error: "Extension not connected. Use 'navigate' or 'tab new' to launch browser first.",
+      };
     }
 
     // If command already in-flight for session, queue this command

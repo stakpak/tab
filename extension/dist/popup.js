@@ -173,7 +173,15 @@ async function loadStatus() {
 }
 async function loadSessionId() {
   try {
-    const response = await sendMessage({ type: "GET_SESSION_ID" });
+    const currentWindow = await chrome.windows.getCurrent();
+    if (!currentWindow.id) {
+      updateSessionId(null);
+      return;
+    }
+    const response = await sendMessage({
+      type: "GET_SESSION_ID",
+      payload: { windowId: currentWindow.id }
+    });
     updateSessionId(response.sessionId);
   } catch (error) {
     console.error("Failed to load session ID:", error);
