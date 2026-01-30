@@ -22,6 +22,9 @@ pub const ENV_IPC_SOCKET_PATH: &str = "TAB_SOCKET_PATH";
 /// Environment variable for session name
 pub const ENV_SESSION_NAME: &str = "TAB_SESSION";
 
+/// Environment variable for browser profile directory
+pub const ENV_PROFILE: &str = "TAB_PROFILE";
+
 /// Default session name
 pub const DEFAULT_SESSION_NAME: &str = "default";
 

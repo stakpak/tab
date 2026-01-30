@@ -346,6 +346,7 @@ mod tests {
         let command = Command {
             id: "cmd-1".to_string(),
             session_id: "session-1".to_string(),
+            profile: None,
             command_type: crate::types::CommandType::Navigate,
             params: Some(json!({"url": "https://example.com"})),
             timestamp: "2026-01-01T00:00:00Z".to_string(),

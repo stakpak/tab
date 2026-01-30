@@ -26,6 +26,7 @@ pub use type_cmd::execute as type_text;
 
 use crate::error::Result;
 use crate::ipc::IpcClient;
+use crate::session::ProfileDir;
 use crate::types::{Command, CommandId, CommandType, SessionId};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
@@ -38,12 +39,16 @@ use uuid::Uuid;
 /// Helper to build commands with common fields
 pub struct CommandBuilder {
     session_id: SessionId,
+    profile: ProfileDir,
 }
 
 impl CommandBuilder {
-    /// Create a new command builder for a session
-    pub fn new(session_id: SessionId) -> Self {
-        Self { session_id }
+    /// Create a new command builder for a session and profile
+    pub fn new(session_id: SessionId, profile: ProfileDir) -> Self {
+        Self {
+            session_id,
+            profile,
+        }
     }
 
     /// Build a command with the given type and params
@@ -59,7 +64,7 @@ impl CommandBuilder {
         Command {
             id: generate_command_id(),
             session_id: self.session_id.clone(),
-            profile: None, // TODO: Get profile from CLI args or config
+            profile: self.profile.clone(),
             command_type,
             params: params_opt,
             timestamp: current_timestamp(),
@@ -87,12 +92,17 @@ pub fn current_timestamp() -> String {
 pub struct CommandContext {
     pub client: IpcClient,
     pub session_id: SessionId,
+    pub profile: ProfileDir,
 }
 
 impl CommandContext {
     /// Create a new command context
-    pub fn new(client: IpcClient, session_id: SessionId) -> Self {
-        Self { client, session_id }
+    pub fn new(client: IpcClient, session_id: SessionId, profile: ProfileDir) -> Self {
+        Self {
+            client,
+            session_id,
+            profile,
+        }
     }
 
     /// Execute a command and return the response
@@ -101,7 +111,7 @@ impl CommandContext {
         command_type: CommandType,
         payload: serde_json::Value,
     ) -> Result<crate::types::CommandResponse> {
-        let builder = CommandBuilder::new(self.session_id.clone());
+        let builder = CommandBuilder::new(self.session_id.clone(), self.profile.clone());
         let command = builder.build(command_type, payload);
         self.client.send_command(command)
     }
@@ -132,11 +142,15 @@ mod tests {
 
     #[test]
     fn command_builder_builds_command_fields() {
-        let builder = CommandBuilder::new("session-1".to_string());
+        let builder = CommandBuilder::new(
+            "session-1".to_string(),
+            Some("/path/to/profile".to_string()),
+        );
         let params = json!({"url": "https://example.com"});
         let command = builder.build(CommandType::Navigate, params.clone());
 
         assert_eq!(command.session_id, "session-1");
+        assert_eq!(command.profile, Some("/path/to/profile".to_string()));
         assert!(matches!(command.command_type, CommandType::Navigate));
         assert_eq!(command.params, Some(params));
         assert!(Uuid::parse_str(&command.id).is_ok());
@@ -147,8 +161,13 @@ mod tests {
     fn command_context_new_stores_fields() {
         let config = crate::config::Config::default();
         let client = IpcClient::new(config);
-        let ctx = CommandContext::new(client, "session-1".to_string());
+        let ctx = CommandContext::new(
+            client,
+            "session-1".to_string(),
+            Some("/path/to/profile".to_string()),
+        );
 
         assert_eq!(ctx.session_id, "session-1");
+        assert_eq!(ctx.profile, Some("/path/to/profile".to_string()));
     }
 }

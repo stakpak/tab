@@ -4,9 +4,17 @@
 //! - Explicit --session flag
 //! - TAB_SESSION environment variable
 //! - Default session name
+//!
+//! Handles resolving which profile to use based on:
+//! - Explicit --profile flag
+//! - TAB_PROFILE environment variable
+//! - Default (None = system default profile)
 
-use crate::config::{Config, ENV_SESSION_NAME};
+use crate::config::{Config, ENV_PROFILE, ENV_SESSION_NAME};
 use crate::types::SessionId;
+
+/// Profile directory type (None = default profile)
+pub type ProfileDir = Option<String>;
 
 // =============================================================================
 // Session Resolver
@@ -36,7 +44,7 @@ impl SessionResolver {
         }
 
         // 2. Else check ENV_SESSION_NAME environment variable
-        if let Some(session) = self.from_env() {
+        if let Some(session) = self.session_from_env() {
             return session;
         }
 
@@ -44,9 +52,30 @@ impl SessionResolver {
         self.config.default_session.clone()
     }
 
+    /// Resolve the profile directory to use
+    ///
+    /// Priority order:
+    /// 1. Explicit profile directory (from --profile flag)
+    /// 2. TAB_PROFILE environment variable
+    /// 3. Default (None = system default profile)
+    pub fn resolve_profile(&self, explicit_profile: Option<&str>) -> ProfileDir {
+        // 1. If explicit_profile is Some, use it
+        if let Some(profile) = explicit_profile {
+            return Some(profile.to_string());
+        }
+
+        // 2. Else check ENV_PROFILE environment variable
+        self.profile_from_env()
+    }
+
     /// Get session from environment variable only
-    pub fn from_env(&self) -> Option<SessionId> {
+    pub fn session_from_env(&self) -> Option<SessionId> {
         std::env::var(ENV_SESSION_NAME).ok()
+    }
+
+    /// Get profile from environment variable only
+    pub fn profile_from_env(&self) -> ProfileDir {
+        std::env::var(ENV_PROFILE).ok()
     }
 }
 
@@ -59,6 +88,18 @@ pub fn resolve_session(explicit_session: Option<&str>) -> SessionId {
     let config = crate::config::load_config();
     let resolver = SessionResolver::new(config);
     resolver.resolve(explicit_session)
+}
+
+/// Resolve both session and profile using default config
+pub fn resolve_session_and_profile(
+    explicit_session: Option<&str>,
+    explicit_profile: Option<&str>,
+) -> (SessionId, ProfileDir) {
+    let config = crate::config::load_config();
+    let resolver = SessionResolver::new(config);
+    let session = resolver.resolve(explicit_session);
+    let profile = resolver.resolve_profile(explicit_profile);
+    (session, profile)
 }
 
 /// Validate a session name
@@ -172,21 +213,24 @@ mod tests {
     }
 
     #[test]
-    fn session_resolver_from_env_returns_none_when_not_set() {
+    fn session_resolver_session_from_env_returns_none_when_not_set() {
         env::remove_var(ENV_SESSION_NAME);
         let config = Config::default();
         let resolver = SessionResolver::new(config);
 
-        assert_eq!(resolver.from_env(), None);
+        assert_eq!(resolver.session_from_env(), None);
     }
 
     #[test]
-    fn session_resolver_from_env_returns_value_when_set() {
+    fn session_resolver_session_from_env_returns_value_when_set() {
         env::set_var(ENV_SESSION_NAME, "test-session");
         let config = Config::default();
         let resolver = SessionResolver::new(config);
 
-        assert_eq!(resolver.from_env(), Some("test-session".to_string()));
+        assert_eq!(
+            resolver.session_from_env(),
+            Some("test-session".to_string())
+        );
 
         env::remove_var(ENV_SESSION_NAME);
     }

@@ -18,7 +18,7 @@ pub use config::Config;
 pub use error::{CliError, Result};
 pub use ipc::IpcClient;
 pub use output::OutputFormatter;
-pub use session::SessionResolver;
+pub use session::{ProfileDir, SessionResolver};
 
 // =============================================================================
 // Main Entry Point
@@ -50,11 +50,12 @@ pub fn run(cli: Cli) -> Result<()> {
     // 2. Create IPC client
     let client = IpcClient::new(config);
 
-    // 3. Resolve session
-    let session_id = session::resolve_session(cli.session.as_deref());
+    // 3. Resolve session and profile
+    let (session_id, profile) =
+        session::resolve_session_and_profile(cli.session.as_deref(), cli.profile.as_deref());
 
     // 4. Create command context
-    let ctx = commands::CommandContext::new(client, session_id);
+    let ctx = commands::CommandContext::new(client, session_id, profile);
 
     // 5. Match on command and execute
     let response = match cli.command {

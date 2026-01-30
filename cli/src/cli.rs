@@ -17,6 +17,10 @@ pub struct Cli {
     #[arg(short, long, global = true)]
     pub session: Option<String>,
 
+    /// Browser profile directory to use (default: system default profile)
+    #[arg(long, global = true)]
+    pub profile: Option<String>,
+
     /// Output format: human, json, quiet
     #[arg(short, long, global = true, default_value = "human")]
     pub output: OutputFormat,
