@@ -76,13 +76,7 @@ pub fn run(cli: Cli) -> Result<()> {
         Commands::Ping => unreachable!(),
     };
 
-    let output_format = match cli.output {
-        cli::OutputFormat::Human => output::OutputFormat::Human,
-        cli::OutputFormat::Json => output::OutputFormat::Json,
-        cli::OutputFormat::Quiet => output::OutputFormat::Quiet,
-    };
-
-    let formatter = OutputFormatter::new(output_format);
+    let formatter = OutputFormatter::new(cli.output);
     formatter.print_response(&response)?;
     if response.success {
         Ok(())

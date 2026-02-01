@@ -4,26 +4,10 @@
 //! Supports both human-readable and JSON output formats.
 
 use crate::error::Result;
-use crate::types::{CommandResponse, SnapshotData, TabListData};
+use crate::types::{CommandResponse, OutputFormat, SnapshotData, TabListData};
 
 // =============================================================================
 // Output Format
-// =============================================================================
-
-/// Supported output formats
-#[derive(Debug, Clone, Copy, Default)]
-pub enum OutputFormat {
-    /// Human-readable output (default)
-    #[default]
-    Human,
-    /// JSON output for scripting
-    Json,
-    /// Quiet mode - minimal output
-    Quiet,
-}
-
-// =============================================================================
-// Output Formatter
 // =============================================================================
 
 /// Formats command responses for display

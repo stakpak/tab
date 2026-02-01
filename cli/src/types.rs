@@ -7,6 +7,14 @@ use crate::error::CliError;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
+#[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
+pub enum OutputFormat {
+    #[default]
+    Human,
+    Json,
+    Quiet,
+}
+
 // =============================================================================
 // Command Types
 // =============================================================================

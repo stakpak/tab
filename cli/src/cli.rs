@@ -2,8 +2,8 @@
 //!
 //! Defines all commands and their arguments.
 
+use crate::types::OutputFormat;
 use clap::{Args, Parser, Subcommand};
-
 // =============================================================================
 // Main CLI Structure
 // =============================================================================
@@ -27,18 +27,6 @@ pub struct Cli {
 
     #[command(subcommand)]
     pub command: Commands,
-}
-
-/// Output format options
-#[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
-pub enum OutputFormat {
-    /// Human-readable output
-    #[default]
-    Human,
-    /// JSON output for scripting
-    Json,
-    /// Minimal output
-    Quiet,
 }
 
 // =============================================================================
