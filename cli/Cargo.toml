@@ -1,6 +1,6 @@
 [package]
 name = "agent-tab"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Browser automation CLI plugin for Stakpak Agent - control a real browser from the command line"
 authors = ["Stakpak Team"]
