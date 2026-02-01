@@ -2,17 +2,28 @@ import { TabDaemon } from "./daemon.js";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { DaemonConfig, DEFAULT_CONFIG } from "./types.js";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
+function getVersion(): string {
+  try {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+    const packageJsonPath = join(__dirname, "..", "..", "package.json");
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
+    return packageJson.version || "0.1.0";
+  } catch {
+    return "0.1.0";
+  }
+}
 
 export function loadConfig(argv: string[]): DaemonConfig {
   const program = new Command();
 
-  const packageVersion = process.env.npm_package_version || "0.1.0";
-
   program
     .name("agent-tab-daemon")
     .description("Browser automation daemon for Stakpak Agent")
-    .version(packageVersion)
+    .version(getVersion())
     .option("-s, --socket <path>", "IPC socket path", process.env.TAB_SOCKET_PATH || DEFAULT_CONFIG.ipcSocketPath)
     .option("-p, --port <number>", "WebSocket server port", (val) => parseInt(val, 10), process.env.TAB_WS_PORT || DEFAULT_CONFIG.wsPort)
     .option("-b, --browser <path>", "Path to Chrome/Chromium executable", process.env.TAB_BROWSER_PATH || DEFAULT_CONFIG.defaultBrowserPath)
