@@ -288,7 +288,7 @@ mod tests {
                 serde_json::from_str(buf.trim_end()).expect("parse json");
             assert_eq!(incoming["type"], "command");
             let payload = incoming.get("payload").expect("payload");
-            assert_eq!(payload["String"], "session-1");
+            assert_eq!(payload["sessionId"], "session-1");
             assert_eq!(payload["type"], "navigate");
             assert_eq!(payload["id"], "cmd-1");
 
