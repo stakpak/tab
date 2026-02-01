@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "LLM Browser Agent",
+  "name": "Staktab",
   "version": "0.1.0",
   "description": "Browser extension for LLM-controlled web interaction",
   "permissions": [
@@ -30,6 +30,6 @@
   ],
   "action": {
     "default_popup": "dist/popup.html",
-    "default_title": "LLM Browser Agent"
+    "default_title": "Staktab"
   }
 }
