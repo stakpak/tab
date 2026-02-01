@@ -1,6 +1,6 @@
 # Tab CLI - Browser Automation for AI Agents
 
-A command-line interface for controlling a real browser through the StakPak extension. Navigate websites, interact with elements, take snapshots, manage tabs, and execute JavaScript—all from your terminal.
+A command-line interface for controlling a real browser through the StakTab extension. Navigate websites, interact with elements, take snapshots, manage tabs, and execute JavaScript—all from your terminal.
 
 > **Note:** The StakPak extension must be installed in the browser profile for Tab CLI to control the browser.
 
