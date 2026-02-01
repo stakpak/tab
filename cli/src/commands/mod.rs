@@ -13,24 +13,33 @@ pub mod scroll;
 pub mod snapshot;
 pub mod tab;
 pub mod type_cmd;
+pub mod utils;
 
-// Re-export command handlers
-pub use click::execute as click;
-pub use eval::execute as eval;
-pub use history::{back, forward};
-pub use navigate::execute as navigate;
-pub use scroll::execute as scroll;
-pub use snapshot::execute as snapshot;
-pub use tab::{close as tab_close, list as tab_list, new as tab_new, switch as tab_switch};
-pub use type_cmd::execute as type_text;
+pub use click::ClickCommand;
+pub use eval::EvalCommand;
+pub use history::back::BackCommand;
+pub use history::forward::ForwardCommand;
+pub use navigate::NavigateCommand;
+pub use scroll::ScrollCommand;
+pub use snapshot::SnapshotCommand;
+pub use tab::close::TabCloseCommand;
+pub use tab::list::TabListCommand;
+pub use tab::new::TabNewCommand;
+pub use tab::switch::TabSwitchCommand;
+pub use type_cmd::TypeCommand;
 
 use crate::error::Result;
 use crate::ipc::IpcClient;
 use crate::session::ProfileDir;
+use crate::types::CommandResponse;
 use crate::types::{Command, CommandId, CommandType, SessionId};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use uuid::Uuid;
+
+pub trait Execute {
+    fn execute(&self, ctx: &CommandContext) -> Result<CommandResponse>;
+}
 
 // =============================================================================
 // Command Builder
@@ -54,8 +63,7 @@ impl CommandBuilder {
     /// Build a command with the given type and params
     pub fn build(&self, command_type: CommandType, params: serde_json::Value) -> Command {
         // Convert empty object to None, otherwise Some
-        let params_opt = if params.is_object() && params.as_object().map_or(true, |o| o.is_empty())
-        {
+        let params_opt = if params.is_object() && params.as_object().is_none_or(|o| o.is_empty()) {
             None
         } else {
             Some(params)

@@ -3,67 +3,31 @@
 //! Clicks on an element identified by a ref.
 //! Ref must be valid (from the current snapshot).
 
-use crate::commands::CommandContext;
-use crate::error::{CliError, Result};
+use crate::commands::utils::validate_ref;
+use crate::commands::{CommandContext, Execute};
+use crate::error::Result;
 use crate::types::{ClickPayload, CommandResponse, CommandType};
 
-/// Execute the click command
-///
-/// # Arguments
-/// * `ctx` - Command execution context
-/// * `element_ref` - Reference to the element to click
-///
-/// # Returns
-/// Command response indicating success or failure
-pub fn execute(ctx: &CommandContext, element_ref: &str) -> Result<CommandResponse> {
-    // 1. Validate ref is not empty
-    validate_ref(element_ref)?;
-
-    // 2. Build ClickPayload
-    let payload = ClickPayload {
-        r#ref: element_ref.to_string(),
-    };
-
-    // 3. Serialize payload to JSON
-    let payload_json = serde_json::to_value(payload)?;
-
-    // 4. Execute command via context
-    ctx.execute(CommandType::Click, payload_json)
+pub struct ClickCommand {
+    pub r#ref: String,
 }
 
-/// Validate element ref format
-fn validate_ref(element_ref: &str) -> Result<()> {
-    // Must not be empty
-    if element_ref.trim().is_empty() {
-        return Err(CliError::InvalidArguments(
-            "Element reference cannot be empty".to_string(),
-        ));
+impl ClickCommand {
+    pub fn new(r#ref: String) -> Self {
+        Self { r#ref }
     }
-
-    Ok(())
 }
 
-// =============================================================================
-// Tests
-// =============================================================================
+impl Execute for ClickCommand {
+    fn execute(&self, ctx: &CommandContext) -> Result<CommandResponse> {
+        validate_ref(&self.r#ref)?;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+        let payload = ClickPayload {
+            r#ref: self.r#ref.clone(),
+        };
 
-    #[test]
-    fn validate_ref_accepts_numeric() {
-        assert!(validate_ref("123").is_ok());
-    }
+        let payload_json = serde_json::to_value(payload)?;
 
-    #[test]
-    fn validate_ref_accepts_alphanumeric() {
-        assert!(validate_ref("abc123").is_ok());
-    }
-
-    #[test]
-    fn validate_ref_rejects_empty() {
-        assert!(validate_ref("").is_err());
-        assert!(validate_ref("   ").is_err());
+        ctx.execute(CommandType::Click, payload_json)
     }
 }

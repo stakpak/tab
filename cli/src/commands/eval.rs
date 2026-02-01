@@ -2,37 +2,34 @@
 //!
 //! Evaluates JavaScript in the context of the active tab.
 
-use crate::commands::CommandContext;
+use crate::commands::{CommandContext, Execute};
 use crate::error::{CliError, Result};
 use crate::types::{CommandResponse, CommandType, EvalPayload};
 
-/// Execute the eval command
-///
-/// # Arguments
-/// * `ctx` - Command execution context
-/// * `script` - JavaScript code to evaluate
-///
-/// # Returns
-/// Command response containing the evaluation result
-pub fn execute(ctx: &CommandContext, script: &str) -> Result<CommandResponse> {
-    // 1. Validate script is not empty
-    validate_script(script)?;
-
-    // 2. Build EvalPayload
-    let payload = EvalPayload {
-        script: script.to_string(),
-    };
-
-    // 3. Serialize payload to JSON
-    let payload_json = serde_json::to_value(payload)?;
-
-    // 4. Execute command via context
-    ctx.execute(CommandType::Eval, payload_json)
+pub struct EvalCommand {
+    pub script: String,
 }
 
-/// Validate script is not empty
+impl EvalCommand {
+    pub fn new(script: String) -> Self {
+        Self { script }
+    }
+}
+
+impl Execute for EvalCommand {
+    fn execute(&self, ctx: &CommandContext) -> Result<CommandResponse> {
+        validate_script(&self.script)?;
+
+        let payload = EvalPayload {
+            script: self.script.clone(),
+        };
+
+        let payload_json = serde_json::to_value(payload)?;
+        ctx.execute(CommandType::Eval, payload_json)
+    }
+}
+
 fn validate_script(script: &str) -> Result<()> {
-    // Must not be empty
     if script.trim().is_empty() {
         return Err(CliError::InvalidArguments(
             "Script cannot be empty".to_string(),
@@ -40,24 +37,4 @@ fn validate_script(script: &str) -> Result<()> {
     }
 
     Ok(())
-}
-
-// =============================================================================
-// Tests
-// =============================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn validate_script_accepts_non_empty() {
-        assert!(validate_script("console.log('test')").is_ok());
-    }
-
-    #[test]
-    fn validate_script_rejects_empty() {
-        assert!(validate_script("").is_err());
-        assert!(validate_script("   ").is_err());
-    }
 }

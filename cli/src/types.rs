@@ -3,7 +3,9 @@
 //! These types mirror the daemon's IPC protocol (newline-delimited JSON).
 //! See: packages/daemon/src/types.ts and packages/daemon/src/ipc-server.ts
 
+use crate::error::CliError;
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 
 // =============================================================================
 // Session Types
@@ -156,6 +158,23 @@ pub enum ScrollDirection {
     Down,
     Left,
     Right,
+}
+
+impl FromStr for ScrollDirection {
+    type Err = CliError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "up" => Ok(ScrollDirection::Up),
+            "down" => Ok(ScrollDirection::Down),
+            "left" => Ok(ScrollDirection::Left),
+            "right" => Ok(ScrollDirection::Right),
+            _ => Err(CliError::InvalidArguments(format!(
+                "Invalid scroll direction: {}. Must be up, down, left, or right",
+                s
+            ))),
+        }
+    }
 }
 
 /// Payload for tab new command

@@ -56,7 +56,9 @@ impl OutputFormatter {
         match self.format {
             OutputFormat::Human => {
                 if let Some(data) = &response.data {
-                    format!("{}", serde_json::to_string_pretty(data).unwrap_or_default())
+                    serde_json::to_string_pretty(data)
+                        .unwrap_or_default()
+                        .to_string()
                 } else {
                     "Success".to_string()
                 }

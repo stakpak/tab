@@ -9,14 +9,16 @@ pub mod session;
 pub mod types;
 
 use cli::{Cli, Commands, TabCommands};
+use commands::Execute;
 use error::{CliError, Result};
 use ipc::IpcClient;
 use output::OutputFormatter;
 use std::process::ExitCode;
+use std::str::FromStr;
 
+use crate::types::ScrollDirection;
 
 pub fn run(cli: Cli) -> Result<()> {
-
     if matches!(cli.command, Commands::Ping) {
         let config = config::load_config();
         let client = IpcClient::new(config);
@@ -31,54 +33,46 @@ pub fn run(cli: Cli) -> Result<()> {
         }
     }
 
-    // 1. Load configuration
     let config = config::load_config();
-
-    // 2. Ensure daemon is running (auto-start if needed)
     daemon::ensure_daemon_running(&config)?;
-
-    // 3. Create IPC client
     let client = IpcClient::new(config);
 
-    // 4. Resolve session and profile
     let (session_id, profile) =
         session::resolve_session_and_profile(cli.session.as_deref(), cli.profile.as_deref());
 
-    // 5. Create command context
     let ctx = commands::CommandContext::new(client, session_id, profile);
 
-    // 6. Match on command and execute
     let response = match cli.command {
-        Commands::Navigate(args) => commands::navigate(&ctx, &args.url)?,
-        Commands::Snapshot => commands::snapshot(&ctx)?,
-        Commands::Click(args) => commands::click(&ctx, &args.r#ref)?,
-        Commands::Type(args) => commands::type_text(&ctx, &args.r#ref, &args.text)?,
+        Commands::Navigate(args) => commands::NavigateCommand::new(args.url).execute(&ctx)?,
+        Commands::Snapshot => commands::SnapshotCommand::default().execute(&ctx)?,
+        Commands::Click(args) => commands::ClickCommand::new(args.r#ref).execute(&ctx)?,
+        Commands::Type(args) => commands::TypeCommand::new(args.r#ref, args.text).execute(&ctx)?,
         Commands::Scroll(args) => {
-            let direction = commands::scroll::parse_direction(&args.direction)?;
-            commands::scroll(&ctx, direction, args.r#ref.as_deref(), args.amount)?
+            let direction = ScrollDirection::from_str(&args.direction)?;
+            commands::ScrollCommand::new(direction, args.r#ref, args.amount).execute(&ctx)?
         }
         Commands::Tab(tab_cmd) => match tab_cmd {
-            TabCommands::New(args) => commands::tab_new(&ctx, args.url.as_deref())?,
-            TabCommands::Close => commands::tab_close(&ctx)?,
-            TabCommands::Switch(args) => commands::tab_switch(&ctx, args.tab_id)?,
-            TabCommands::List => commands::tab_list(&ctx)?,
+            TabCommands::New(args) => commands::TabNewCommand::new(args.url).execute(&ctx)?,
+            TabCommands::Close => commands::TabCloseCommand::default().execute(&ctx)?,
+            TabCommands::Switch(args) => {
+                commands::TabSwitchCommand::new(args.tab_id).execute(&ctx)?
+            }
+            TabCommands::List => commands::TabListCommand::default().execute(&ctx)?,
         },
-        Commands::Back => commands::back(&ctx)?,
-        Commands::Forward => commands::forward(&ctx)?,
-        Commands::Eval(args) => commands::eval(&ctx, &args.script)?,
-        Commands::Ping => unreachable!(), // Handled above
+        Commands::Back => commands::BackCommand::default().execute(&ctx)?,
+        Commands::Forward => commands::ForwardCommand::default().execute(&ctx)?,
+        Commands::Eval(args) => commands::EvalCommand::new(args.script).execute(&ctx)?,
+        Commands::Ping => unreachable!(),
     };
 
-    // 7. Format and print output
     let output_format = match cli.output {
         cli::OutputFormat::Human => output::OutputFormat::Human,
         cli::OutputFormat::Json => output::OutputFormat::Json,
         cli::OutputFormat::Quiet => output::OutputFormat::Quiet,
     };
+
     let formatter = OutputFormatter::new(output_format);
     formatter.print_response(&response)?;
-
-    // 8. Return result
     if response.success {
         Ok(())
     } else {
@@ -90,12 +84,11 @@ pub fn run(cli: Cli) -> Result<()> {
     }
 }
 
-
 fn main() -> ExitCode {
     let cli = cli::parse();
 
     match run(cli) {
-        Ok(()) => ExitCode::from(0 as u8),
+        Ok(()) => ExitCode::from(0_u8),
         Err(e) => {
             eprintln!("Error: {}", e);
             ExitCode::from(e.exit_code() as u8)
