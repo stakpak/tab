@@ -9,12 +9,7 @@ use crate::error::Result;
 use crate::types::{CommandResponse, CommandType};
 use serde::{Deserialize, Serialize};
 
-/// Payload for click command
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClickPayload {
-    pub r#ref: String,
-}
-
 pub struct ClickCommand {
     pub r#ref: String,
 }
@@ -28,13 +23,7 @@ impl ClickCommand {
 impl Execute for ClickCommand {
     fn execute(&self, ctx: &CommandContext) -> Result<CommandResponse> {
         validate_ref(&self.r#ref)?;
-
-        let payload = ClickPayload {
-            r#ref: self.r#ref.clone(),
-        };
-
-        let payload_json = serde_json::to_value(payload)?;
-
+        let payload_json = serde_json::to_value(self)?;
         ctx.execute(CommandType::Click, payload_json)
     }
 }

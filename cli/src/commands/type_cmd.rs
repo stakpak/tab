@@ -9,35 +9,22 @@ use crate::error::Result;
 use crate::types::{CommandResponse, CommandType};
 use serde::{Deserialize, Serialize};
 
-/// Payload for type command
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TypePayload {
+pub struct TypeCommand {
     pub r#ref: String,
     pub text: String,
 }
 
-pub struct TypeCommand {
-    pub element_ref: String,
-    pub text: String,
-}
-
 impl TypeCommand {
-    pub fn new(element_ref: String, text: String) -> Self {
-        Self { element_ref, text }
+    pub fn new(r#ref: String, text: String) -> Self {
+        Self { r#ref, text }
     }
 }
 
 impl Execute for TypeCommand {
     fn execute(&self, ctx: &CommandContext) -> Result<CommandResponse> {
-        validate_ref(&self.element_ref)?;
-
-        let payload = TypePayload {
-            r#ref: self.element_ref.to_string(),
-            text: self.text.to_string(),
-        };
-
-        let payload_json = serde_json::to_value(payload)?;
-
+        validate_ref(&self.r#ref)?;
+        let payload_json = serde_json::to_value(self)?;
         ctx.execute(CommandType::Type, payload_json)
     }
 }

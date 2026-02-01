@@ -4,32 +4,23 @@ use crate::error::Result;
 use crate::types::{CommandResponse, CommandType};
 use serde::{Deserialize, Serialize};
 
-/// Payload for navigate command
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NavigatePayload {
-    pub url: String,
-}
-
 pub struct NavigateCommand {
     pub url: String,
 }
 
 impl NavigateCommand {
     pub fn new(url: String) -> Self {
-        Self { url }
+        Self {
+            url: normalize_url(&url),
+        }
     }
 }
 
 impl Execute for NavigateCommand {
     fn execute(&self, ctx: &CommandContext) -> Result<CommandResponse> {
         validate_url(&self.url)?;
-        let normalized_url = normalize_url(&self.url);
-
-        let payload = NavigatePayload {
-            url: normalized_url,
-        };
-
-        let payload_json = serde_json::to_value(payload)?;
+        let payload_json = serde_json::to_value(self)?;
         ctx.execute(CommandType::Navigate, payload_json)
     }
 }
