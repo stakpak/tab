@@ -7,7 +7,7 @@ pub mod ipc;
 pub mod output;
 pub mod types;
 
-use crate::types::ScrollDirection;
+use clap::Parser;
 use cli::{Cli, Commands, TabCommands};
 use commands::Execute;
 use config::{Config, ENV_PROFILE, ENV_SESSION_NAME};
@@ -16,9 +16,10 @@ use ipc::IpcClient;
 use output::OutputFormatter;
 use std::process::ExitCode;
 use std::str::FromStr;
+use types::ScrollDirection;
 
 fn main() -> ExitCode {
-    let cli = cli::parse();
+    let cli = Cli::parse();
 
     match run(cli) {
         Ok(()) => ExitCode::from(0_u8),

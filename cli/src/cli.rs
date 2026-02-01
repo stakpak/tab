@@ -4,9 +4,6 @@
 
 use crate::types::OutputFormat;
 use clap::{Args, Parser, Subcommand};
-// =============================================================================
-// Main CLI Structure
-// =============================================================================
 
 /// tab - Control a real browser from the command line
 #[derive(Debug, Parser)]
@@ -28,10 +25,6 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
 }
-
-// =============================================================================
-// Commands
-// =============================================================================
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
@@ -67,9 +60,20 @@ pub enum Commands {
     Ping,
 }
 
-// =============================================================================
-// Command Arguments
-// =============================================================================
+#[derive(Debug, Subcommand)]
+pub enum TabCommands {
+    /// Create a new tab
+    New(TabNewArgs),
+
+    /// Close the active tab
+    Close,
+
+    /// Switch to a tab by ID
+    Switch(TabSwitchArgs),
+
+    /// List all tabs
+    List,
+}
 
 #[derive(Debug, Args)]
 pub struct NavigateArgs {
@@ -112,25 +116,6 @@ pub struct EvalArgs {
     pub script: String,
 }
 
-// =============================================================================
-// Tab Subcommands
-// =============================================================================
-
-#[derive(Debug, Subcommand)]
-pub enum TabCommands {
-    /// Create a new tab
-    New(TabNewArgs),
-
-    /// Close the active tab
-    Close,
-
-    /// Switch to a tab by ID
-    Switch(TabSwitchArgs),
-
-    /// List all tabs
-    List,
-}
-
 #[derive(Debug, Args)]
 pub struct TabNewArgs {
     /// URL to open in the new tab (optional)
@@ -146,11 +131,6 @@ pub struct TabSwitchArgs {
 // =============================================================================
 // Parse Function
 // =============================================================================
-
-/// Parse command line arguments
-pub fn parse() -> Cli {
-    Cli::parse()
-}
 
 /// Parse command line arguments from iterator (for testing)
 pub fn parse_from<I, T>(iter: I) -> Cli
