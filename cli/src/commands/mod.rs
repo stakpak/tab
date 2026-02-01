@@ -31,7 +31,6 @@ pub use type_cmd::TypeCommand;
 use crate::commands::utils::current_timestamp;
 use crate::error::Result;
 use crate::ipc::IpcClient;
-use crate::session::ProfileDir;
 use crate::types::{Command, CommandResponse, CommandType};
 use uuid::Uuid;
 
@@ -42,11 +41,11 @@ pub trait Execute {
 pub struct CommandContext {
     pub client: IpcClient,
     pub session_id: String,
-    pub profile: ProfileDir,
+    pub profile: Option<String>,
 }
 
 impl CommandContext {
-    pub fn new(client: IpcClient, session_id: String, profile: ProfileDir) -> Self {
+    pub fn new(client: IpcClient, session_id: String, profile: Option<String>) -> Self {
         Self {
             client,
             session_id,

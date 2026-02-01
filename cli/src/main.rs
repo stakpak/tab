@@ -5,18 +5,29 @@ pub mod daemon;
 pub mod error;
 pub mod ipc;
 pub mod output;
-pub mod session;
 pub mod types;
 
+use crate::types::ScrollDirection;
 use cli::{Cli, Commands, TabCommands};
 use commands::Execute;
+use config::{Config, ENV_PROFILE, ENV_SESSION_NAME};
 use error::{CliError, Result};
 use ipc::IpcClient;
 use output::OutputFormatter;
 use std::process::ExitCode;
 use std::str::FromStr;
 
-use crate::types::ScrollDirection;
+fn main() -> ExitCode {
+    let cli = cli::parse();
+
+    match run(cli) {
+        Ok(()) => ExitCode::from(0_u8),
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            ExitCode::from(e.exit_code() as u8)
+        }
+    }
+}
 
 pub fn run(cli: Cli) -> Result<()> {
     if matches!(cli.command, Commands::Ping) {
@@ -34,11 +45,11 @@ pub fn run(cli: Cli) -> Result<()> {
     }
 
     let config = config::load_config();
+    let session_id = resolve_session_id(&config, cli.session.as_deref());
+    let profile = resolve_profile(cli.profile.as_deref());
+
     daemon::ensure_daemon_running(&config)?;
     let client = IpcClient::new(config);
-
-    let (session_id, profile) =
-        session::resolve_session_and_profile(cli.session.as_deref(), cli.profile.as_deref());
 
     let ctx = commands::CommandContext::new(client, session_id, profile);
 
@@ -84,14 +95,22 @@ pub fn run(cli: Cli) -> Result<()> {
     }
 }
 
-fn main() -> ExitCode {
-    let cli = cli::parse();
-
-    match run(cli) {
-        Ok(()) => ExitCode::from(0_u8),
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            ExitCode::from(e.exit_code() as u8)
-        }
+fn resolve_session_id(config: &Config, session_id: Option<&str>) -> String {
+    if let Some(session) = session_id {
+        return session.to_string();
     }
+
+    if let Ok(session) = std::env::var(ENV_SESSION_NAME) {
+        return session;
+    }
+
+    config.default_session.clone()
+}
+
+fn resolve_profile(profile: Option<&str>) -> Option<String> {
+    if let Some(profile) = profile {
+        return Some(profile.to_string());
+    }
+
+    std::env::var(ENV_PROFILE).ok()
 }
