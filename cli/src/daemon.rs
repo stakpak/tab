@@ -28,7 +28,7 @@ const DAEMON_STARTUP_TIMEOUT_MS: u64 = 10000;
 const DAEMON_POLL_INTERVAL_MS: u64 = 100;
 
 /// Daemon executable name
-const DAEMON_EXECUTABLE: &str = "tab-daemon";
+const DAEMON_EXECUTABLE: &str = "agent-tab-daemon";
 
 // =============================================================================
 // Daemon Manager
