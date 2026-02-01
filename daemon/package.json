@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "agent-tab-daemon": "dist/index.js"
+    "agent-tab-daemon": "dist/daemon.js"
   },
   "types": "dist/index.d.ts",
   "scripts": {

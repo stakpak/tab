@@ -2,20 +2,8 @@ import { TabDaemon } from "./daemon.js";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { DaemonConfig, DEFAULT_CONFIG } from "./types.js";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
 
-function getVersion(): string {
-  try {
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = dirname(__filename);
-    const packageJsonPath = join(__dirname, "..", "..", "package.json");
-    const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
-    return packageJson.version || "0.1.0";
-  } catch {
-    return "0.1.0";
-  }
-}
+const DAEMON_VERSION = "0.1.0";
 
 export function loadConfig(argv: string[]): DaemonConfig {
   const program = new Command();
@@ -23,7 +11,7 @@ export function loadConfig(argv: string[]): DaemonConfig {
   program
     .name("agent-tab-daemon")
     .description("Browser automation daemon for Stakpak Agent")
-    .version(getVersion())
+    .version(DAEMON_VERSION)
     .option("-s, --socket <path>", "IPC socket path", process.env.TAB_SOCKET_PATH || DEFAULT_CONFIG.ipcSocketPath)
     .option("-p, --port <number>", "WebSocket server port", (val) => parseInt(val, 10), process.env.TAB_WS_PORT || DEFAULT_CONFIG.wsPort)
     .option("-b, --browser <path>", "Path to Chrome/Chromium executable", process.env.TAB_BROWSER_PATH || DEFAULT_CONFIG.defaultBrowserPath)
@@ -59,11 +47,24 @@ async function main(): Promise<void> {
   console.log("Daemon is running. Press Ctrl+C to stop.");
 }
 
-const isMainModule =
+// Run main when executed directly (ESM or CJS)
+// In bundled CJS, this is always the entry point
+// In ESM dev, check if this file is the main module
+const isMainModule = (() => {
+  try {
+    // ESM check
+    // @ts-ignore
+    if (import.meta.url) {
+      // @ts-ignore
+      return process.argv[1] === fileURLToPath(import.meta.url);
+    }
+  } catch {
+    // import.meta not available (CJS)
+  }
+  // CJS check or assume we're main if import.meta not available
   // @ts-ignore
-  (typeof require !== "undefined" && require.main === module) ||
-  // @ts-ignore
-  (import.meta.url && process.argv[1] === fileURLToPath(import.meta.url));
+  return typeof require === "undefined" || require.main === module;
+})();
 
 if (isMainModule) {
   main().catch((error) => {
