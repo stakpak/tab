@@ -46,11 +46,8 @@ export class WsServer {
   private heartbeatStates: Map<SessionId, HeartbeatState> = new Map();
   private sessionManager: SessionManager | null = null;
 
-  constructor(private config: DaemonConfig) {}
+  constructor(private config: DaemonConfig) { }
 
-  /**
-   * Set the session manager for session operations
-   */
   setSessionManager(sessionManager: SessionManager): void {
     this.sessionManager = sessionManager;
   }

@@ -14,6 +14,8 @@ import type {
   DaemonConfig,
 } from "./types.js";
 
+import { validateSessionName } from "./validation.js";
+
 /**
  * Default session name
  */
@@ -51,7 +53,7 @@ export class SessionManager {
    */
   createSession(name: string, profileDir: string | undefined = undefined): Session {
     // Validate session name
-    if (!this.validateSessionName(name)) {
+    if (!validateSessionName(name)) {
       throw new Error(`Invalid session name: "${name}". Must be alphanumeric with dashes/underscores, 1-64 characters.`);
     }
 
@@ -115,7 +117,7 @@ export class SessionManager {
    */
   getOrCreateDefaultSession(profileDir: string | undefined = undefined): Session {
     const profileKey = profileDir ?? "__default__";
-    
+
     // Check if we already have a default session for this profile
     const existingId = this.profileDefaultSessions.get(profileKey);
     if (existingId) {
@@ -126,7 +128,7 @@ export class SessionManager {
       // Session was deleted, clean up the stale reference
       this.profileDefaultSessions.delete(profileKey);
     }
-    
+
     // Create new default session for this profile
     return this.createSession(DEFAULT_SESSION_NAME, profileDir);
   }
@@ -292,25 +294,6 @@ export class SessionManager {
    */
   private generateSessionId(): SessionId {
     return randomUUID();
-  }
-
-  /**
-   * Validate session name format
-   */
-  private validateSessionName(name: string): boolean {
-    // Check non-empty
-    if (!name || name.length === 0) {
-      return false;
-    }
-
-    // Check reasonable length (1-64 characters)
-    if (name.length > 64) {
-      return false;
-    }
-
-    // Check valid characters (alphanumeric, dash, underscore)
-    const validPattern = /^[a-zA-Z0-9_-]+$/;
-    return validPattern.test(name);
   }
 }
 

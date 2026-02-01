@@ -24,55 +24,7 @@ import type { BrowserManager } from "./browser-manager.js";
 const DEFAULT_COMMAND_TIMEOUT = 30000;
 const DEFAULT_BROWSER_LAUNCH_TIMEOUT = 30000;
 
-/**
- * Valid command types for validation
- * Includes all commands supported by the extension
- */
-const VALID_COMMAND_TYPES: Set<CommandType> = new Set([
-  // Navigation commands
-  "navigate",
-  "open",
-  "back",
-  "forward",
-  "reload",
-  "close",
-  // Snapshot
-  "snapshot",
-  // Element interactions
-  "click",
-  "dblclick",
-  "fill",
-  "type",
-  "press",
-  "hover",
-  "focus",
-  "check",
-  "uncheck",
-  "select",
-  // Scroll
-  "scroll",
-  "scrollintoview",
-  // Element queries
-  "get",
-  "is",
-  "find",
-  // Advanced interactions
-  "drag",
-  "upload",
-  "mouse",
-  "wait",
-  // Tab management
-  "tab",
-  "tab_new",
-  "tab_close",
-  "tab_switch",
-  "tab_list",
-  // Capture
-  "screenshot",
-  "pdf",
-  // Script execution
-  "eval",
-]);
+import { validateCommand } from "./validation.js";
 
 /**
  * Pending command tracking
@@ -108,7 +60,7 @@ export class CommandRouter {
     private config: DaemonConfig,
     private sessionManager: SessionManager,
     private wsServer: WsServer
-  ) {}
+  ) { }
 
   /**
    * Set the browser manager reference (called after construction to avoid circular deps)
@@ -140,9 +92,9 @@ export class CommandRouter {
    * Returns a promise that resolves when the command completes
    */
   async submitCommand(command: Command): Promise<CommandResponse> {
-    
+
     // Validate command structure
-    if (!this.validateCommand(command)) {
+    if (!validateCommand(command)) {
       return {
         id: command.id,
         success: false,
@@ -186,16 +138,6 @@ export class CommandRouter {
 
   /**
    * Launch browser for session, wait for extension to connect, then execute command
-   */
-  /**
-   * Launch browser for session, wait for extension to connect, then execute command
-   * 
-   * TODO: Pass profile directory from session to browser launch.
-   * When launching browser:
-   *   1. Get session from sessionManager
-   *   2. Extract session.profileDir
-   *   3. Pass profileDir to launchBrowser({ sessionId, profileDir })
-   * This ensures browser uses correct profile directory for isolated sessions.
    */
   private async launchBrowserAndExecute(command: Command): Promise<CommandResponse> {
     const { sessionId } = command;
@@ -394,7 +336,12 @@ export class CommandRouter {
     this.inFlightCommands.delete(sessionId);
 
     // Convert to CommandResponse and resolve the pending promise
-    const commandResponse = this.toCommandResponse(response.id, response);
+    const commandResponse = {
+      id: response.id,
+      success: response.success,
+      data: response.data,
+      error: response.error,
+    };
     pending.resolve(commandResponse);
 
     // Process next command in queue if any
@@ -516,94 +463,44 @@ export class CommandRouter {
   }
 
   // ===========================================================================
-  // Command Validation
+  // Command Conversion
   // ===========================================================================
-
-  /**
-   * Validate a command structure
-   */
-  private validateCommand(command: Command): boolean {
-    // Check required fields exist
-    if (!command.id || typeof command.id !== "string") {
-      return false;
-    }
-    if (!command.sessionId || typeof command.sessionId !== "string") {
-      return false;
-    }
-    if (!command.type || typeof command.type !== "string") {
-      return false;
-    }
-    // params is optional but must be an object if present
-    if (command.params !== undefined && (typeof command.params !== "object" || command.params === null)) {
-      return false;
-    }
-
-    // Check command type is valid
-    if (!VALID_COMMAND_TYPES.has(command.type)) {
-      return false;
-    }
-
-    return true;
-  }
 
   /**
    * Convert Command to ExtensionCommand
    * Maps daemon command types to extension format with 'params' field
    */
   private toExtensionCommand(command: Command): ExtensionCommand {
-    // Map daemon command types to extension command types
-    let extensionType: string = command.type;
-    let extensionParams: Record<string, unknown> | undefined = command.params ? { ...command.params } : undefined;
-
     // Map 'navigate' to 'open'
     if (command.type === "navigate") {
-      extensionType = "open";
+      return { id: command.id, type: "open", params: command.params };
     }
 
     // Map tab commands: tab_new, tab_close, tab_switch, tab_list -> tab with action
-    if (command.type === "tab_new") {
-      extensionType = "tab";
-      extensionParams = {
-        action: "new",
-        url: command.params?.url,
-      };
-    } else if (command.type === "tab_close") {
-      extensionType = "tab";
-      extensionParams = {
-        action: "close",
-        tabId: command.params?.tabId,
-      };
-    } else if (command.type === "tab_switch") {
-      extensionType = "tab";
-      extensionParams = {
-        action: "switch",
-        tabId: command.params?.tabId,
-      };
-    } else if (command.type === "tab_list") {
-      extensionType = "tab";
-      extensionParams = {
-        action: "list",
+    const tabActionMap: Record<string, string> = {
+      "tab_new": "new",
+      "tab_close": "close",
+      "tab_switch": "switch",
+      "tab_list": "list",
+    };
+
+    const tabAction = tabActionMap[command.type];
+    if (tabAction) {
+      return {
+        id: command.id,
+        type: "tab",
+        params: {
+          action: tabAction,
+          ...command.params,
+        },
       };
     }
 
-    // Return ExtensionCommand with 'params' field (per protocol spec)
+    // Default: pass through
     return {
       id: command.id,
-      type: extensionType,
-      params: extensionParams,
-    };
-  }
-
-  /**
-   * Convert ExtensionResponse to CommandResponse
-   */
-  private toCommandResponse(commandId: CommandId, response: ExtensionResponse): CommandResponse {
-    // Map fields directly (they have the same structure)
-    return {
-      id: commandId,
-      success: response.success,
-      data: response.data,
-      error: response.error,
+      type: command.type,
+      params: command.params,
     };
   }
 
