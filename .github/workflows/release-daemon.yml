@@ -71,8 +71,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build bundle
+        run: npm run build:pkg
+
       - name: Build executable
-        run: npx pkg . --targets ${{ matrix.target }} --output bin/${{ env.DAEMON_BINARY_NAME }}
+        run: npx pkg dist/daemon.js --targets ${{ matrix.target }} --output bin/${{ env.DAEMON_BINARY_NAME }}
 
       - name: Get version
         id: version
