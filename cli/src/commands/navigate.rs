@@ -1,7 +1,14 @@
 use crate::commands::utils::{normalize_url, validate_url};
 use crate::commands::{CommandContext, Execute};
 use crate::error::Result;
-use crate::types::{CommandResponse, CommandType, NavigatePayload};
+use crate::types::{CommandResponse, CommandType};
+use serde::{Deserialize, Serialize};
+
+/// Payload for navigate command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NavigatePayload {
+    pub url: String,
+}
 
 pub struct NavigateCommand {
     pub url: String,

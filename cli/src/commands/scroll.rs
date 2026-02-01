@@ -4,7 +4,16 @@
 
 use crate::commands::{CommandContext, Execute};
 use crate::error::Result;
-use crate::types::{CommandResponse, CommandType, ScrollDirection, ScrollPayload};
+use crate::types::{CommandResponse, CommandType, ScrollDirection};
+use serde::{Deserialize, Serialize};
+
+/// Payload for scroll command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScrollPayload {
+    pub r#ref: Option<String>,
+    pub direction: ScrollDirection,
+    pub amount: Option<i32>,
+}
 
 pub struct ScrollCommand {
     pub direction: ScrollDirection,

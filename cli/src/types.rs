@@ -8,13 +8,6 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
 // =============================================================================
-// Session Types
-// =============================================================================
-
-/// Unique session identifier
-pub type SessionId = String;
-
-// =============================================================================
 // Command Types
 // =============================================================================
 
@@ -75,7 +68,7 @@ pub enum CommandType {
 #[serde(rename_all = "camelCase")]
 pub struct Command {
     pub id: CommandId,
-    pub session_id: SessionId,
+    pub session_id: String,
     /// Browser profile directory. None means default profile.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
@@ -124,33 +117,6 @@ pub struct IpcMessage {
 // Command Payloads
 // =============================================================================
 
-/// Payload for navigate command
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NavigatePayload {
-    pub url: String,
-}
-
-/// Payload for click command
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClickPayload {
-    pub r#ref: String,
-}
-
-/// Payload for type command
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TypePayload {
-    pub r#ref: String,
-    pub text: String,
-}
-
-/// Payload for scroll command
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ScrollPayload {
-    pub r#ref: Option<String>,
-    pub direction: ScrollDirection,
-    pub amount: Option<i32>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ScrollDirection {
@@ -177,34 +143,9 @@ impl FromStr for ScrollDirection {
     }
 }
 
-/// Payload for tab new command
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TabNewPayload {
-    pub url: Option<String>,
-}
-
-/// Payload for tab switch command
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TabSwitchPayload {
-    pub tab_id: i32,
-}
-
-/// Payload for eval command
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EvalPayload {
-    pub script: String,
-}
-
 // =============================================================================
 // Response Data Types
 // =============================================================================
-
-/// Data returned from snapshot command
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SnapshotData {
-    pub html: String,
-    pub refs: Vec<RefInfo>,
-}
 
 /// Reference information for a DOM element
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -227,4 +168,10 @@ pub struct TabInfo {
     pub id: i32,
     pub url: String,
     pub title: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SnapshotData {
+    pub html: String,
+    pub refs: Vec<RefInfo>,
 }

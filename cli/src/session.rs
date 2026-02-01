@@ -11,8 +11,6 @@
 //! - Default (None = system default profile)
 
 use crate::config::{Config, ENV_PROFILE, ENV_SESSION_NAME};
-use crate::types::SessionId;
-
 /// Profile directory type (None = default profile)
 pub type ProfileDir = Option<String>;
 
@@ -37,7 +35,7 @@ impl SessionResolver {
     /// 1. Explicit session name (from --session flag)
     /// 2. TAB_SESSION environment variable
     /// 3. Default session name from config
-    pub fn resolve(&self, explicit_session: Option<&str>) -> SessionId {
+    pub fn resolve(&self, explicit_session: Option<&str>) -> String {
         // 1. If explicit_session is Some, use it
         if let Some(session) = explicit_session {
             return session.to_string();
@@ -69,7 +67,7 @@ impl SessionResolver {
     }
 
     /// Get session from environment variable only
-    pub fn session_from_env(&self) -> Option<SessionId> {
+    pub fn session_from_env(&self) -> Option<String> {
         std::env::var(ENV_SESSION_NAME).ok()
     }
 
@@ -84,7 +82,7 @@ impl SessionResolver {
 // =============================================================================
 
 /// Resolve session ID using default config
-pub fn resolve_session(explicit_session: Option<&str>) -> SessionId {
+pub fn resolve_session(explicit_session: Option<&str>) -> String {
     let config = crate::config::load_config();
     let resolver = SessionResolver::new(config);
     resolver.resolve(explicit_session)
@@ -94,7 +92,7 @@ pub fn resolve_session(explicit_session: Option<&str>) -> SessionId {
 pub fn resolve_session_and_profile(
     explicit_session: Option<&str>,
     explicit_profile: Option<&str>,
-) -> (SessionId, ProfileDir) {
+) -> (String, ProfileDir) {
     let config = crate::config::load_config();
     let resolver = SessionResolver::new(config);
     let session = resolver.resolve(explicit_session);

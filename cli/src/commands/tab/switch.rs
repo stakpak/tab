@@ -1,6 +1,13 @@
 use crate::commands::{CommandContext, Execute};
 use crate::error::Result;
-use crate::types::{CommandResponse, CommandType, TabSwitchPayload};
+use crate::types::{CommandResponse, CommandType};
+use serde::{Deserialize, Serialize};
+
+/// Payload for tab switch command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TabSwitchPayload {
+    pub tab_id: i32,
+}
 
 pub struct TabSwitchCommand {
     pub tab_id: i32,

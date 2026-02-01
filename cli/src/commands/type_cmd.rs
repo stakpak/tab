@@ -6,7 +6,15 @@
 use crate::commands::utils::validate_ref;
 use crate::commands::{CommandContext, Execute};
 use crate::error::Result;
-use crate::types::{CommandResponse, CommandType, TypePayload};
+use crate::types::{CommandResponse, CommandType};
+use serde::{Deserialize, Serialize};
+
+/// Payload for type command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TypePayload {
+    pub r#ref: String,
+    pub text: String,
+}
 
 pub struct TypeCommand {
     pub element_ref: String,

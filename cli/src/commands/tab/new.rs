@@ -1,7 +1,14 @@
 use crate::commands::utils::normalize_url;
 use crate::commands::{CommandContext, Execute};
 use crate::error::Result;
-use crate::types::{CommandResponse, CommandType, TabNewPayload};
+use crate::types::{CommandResponse, CommandType};
+use serde::{Deserialize, Serialize};
+
+/// Payload for tab new command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TabNewPayload {
+    pub url: Option<String>,
+}
 
 pub struct TabNewCommand {
     pub url: Option<String>,

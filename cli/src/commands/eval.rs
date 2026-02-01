@@ -4,7 +4,14 @@
 
 use crate::commands::{CommandContext, Execute};
 use crate::error::{CliError, Result};
-use crate::types::{CommandResponse, CommandType, EvalPayload};
+use crate::types::{CommandResponse, CommandType};
+use serde::{Deserialize, Serialize};
+
+/// Payload for eval command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EvalPayload {
+    pub script: String,
+}
 
 pub struct EvalCommand {
     pub script: String,

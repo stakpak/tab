@@ -6,7 +6,14 @@
 use crate::commands::utils::validate_ref;
 use crate::commands::{CommandContext, Execute};
 use crate::error::Result;
-use crate::types::{ClickPayload, CommandResponse, CommandType};
+use crate::types::{CommandResponse, CommandType};
+use serde::{Deserialize, Serialize};
+
+/// Payload for click command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClickPayload {
+    pub r#ref: String,
+}
 
 pub struct ClickCommand {
     pub r#ref: String,

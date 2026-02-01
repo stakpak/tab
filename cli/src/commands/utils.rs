@@ -1,5 +1,7 @@
 use crate::error::CliError;
 use crate::error::Result;
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 
 pub fn validate_ref(element_ref: &str) -> Result<()> {
     // Must not be empty
@@ -39,4 +41,10 @@ pub fn validate_url(url: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub fn current_timestamp() -> String {
+    OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .expect("format timestamp")
 }
