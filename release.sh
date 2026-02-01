@@ -28,30 +28,34 @@ print_error() {
 
 # Function to show usage
 show_usage() {
-    echo "Usage: $0 [patch|minor|major|<specific_version>] [--beta]"
+    echo "Usage: $0 [cli|daemon|all] [patch|minor|major|<specific_version>] [--beta]"
     echo ""
     echo "Examples:"
-    echo "  $0 patch          # Bump patch version (0.1.0 -> 0.1.1)"
-    echo "  $0 minor          # Bump minor version (0.1.0 -> 0.2.0)"
-    echo "  $0 major          # Bump major version (0.1.0 -> 1.0.0)"
-    echo "  $0 1.2.3          # Set specific version to 1.2.3"
-    echo "  $0                # Interactive mode - will prompt for version type"
+    echo "  $0 all patch              # Bump both CLI and Daemon patch version"
+    echo "  $0 cli minor              # Bump CLI minor version only"
+    echo "  $0 daemon 1.2.3           # Set Daemon specific version to 1.2.3"
+    echo "  $0 all 1.0.0 --beta       # Create beta release for both packages"
+    echo "  $0 all                    # Interactive mode - will prompt for version type"
     echo ""
     echo "Beta releases:"
-    echo "  $0 patch --beta   # Create beta release (0.1.0 -> 0.1.1-beta.1)"
-    echo "  $0 --beta         # Interactive mode with beta suffix"
+    echo "  $0 all patch --beta       # Create beta release (0.1.0 -> 0.1.1-beta.1)"
+    echo "  $0 all --beta             # Interactive mode with beta suffix"
     echo ""
     echo "Note: Beta releases create tags like v0.1.1-beta.1 and are marked"
     echo "      as pre-releases on GitHub."
 }
 
 # Function to get current version from Cargo.toml
-get_current_version() {
-    grep '^version = ' Cargo.toml | head -1 | sed -E 's/version = "([^"]+)"/\1/'
+get_cli_version() {
+    grep '^version = ' cli/Cargo.toml | head -1 | sed -E 's/version = "([^"]+)"/\1/'
+}
+
+# Function to get current version from package.json
+get_daemon_version() {
+    node -p "require('./daemon/package.json').version"
 }
 
 # Function to validate semantic version format
-# Accepts: X.Y.Z or X.Y.Z-beta.N
 validate_version() {
     local version=$1
     if [[ ! $version =~ ^[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]]; then
@@ -93,25 +97,36 @@ bump_version() {
     echo "$major.$minor.$patch"
 }
 
-# Function to update version in Cargo.toml and Cargo.lock
-update_cargo_version() {
+# Function to update version in CLI (Cargo.toml and Cargo.lock)
+update_cli_version() {
     local new_version=$1
     local temp_file=$(mktemp)
     
     # Update the version line in Cargo.toml
-    sed "s/^version = \".*\"/version = \"$new_version\"/" Cargo.toml > "$temp_file"
-    mv "$temp_file" Cargo.toml
+    sed "s/^version = \".*\"/version = \"$new_version\"/" cli/Cargo.toml > "$temp_file"
+    mv "$temp_file" cli/Cargo.toml
     
-    print_success "Updated Cargo.toml version to $new_version"
+    print_success "Updated CLI version to $new_version"
     
     # Update Cargo.lock to reflect the new version
-    print_info "Updating Cargo.lock..."
-    if cargo update --package agent-tab; then
-        print_success "Updated Cargo.lock"
-    else
-        print_error "Failed to update Cargo.lock"
-        exit 1
-    fi
+    print_info "Updating CLI Cargo.lock..."
+    (cd cli && cargo update --package agent-tab)
+    print_success "Updated CLI Cargo.lock"
+}
+
+# Function to update version in Daemon (package.json)
+update_daemon_version() {
+    local new_version=$1
+    
+    # Use node to update package.json
+    node -e "
+        const fs = require('fs');
+        const pkg = JSON.parse(fs.readFileSync('./daemon/package.json', 'utf8'));
+        pkg.version = '$new_version';
+        fs.writeFileSync('./daemon/package.json', JSON.stringify(pkg, null, 2) + '\n');
+    "
+    
+    print_success "Updated Daemon version to $new_version"
 }
 
 # Function to check if git working directory is clean
@@ -133,17 +148,32 @@ check_git_status() {
 # Function to commit and push changes
 commit_and_push() {
     local version=$1
+    local packages=$2
     
     print_info "Adding changes to git..."
-    git add Cargo.toml Cargo.lock
+    
+    if [[ "$packages" == "all" || "$packages" == "cli" ]]; then
+        git add cli/Cargo.toml cli/Cargo.lock
+    fi
+    
+    if [[ "$packages" == "all" || "$packages" == "daemon" ]]; then
+        git add daemon/package.json daemon/package-lock.json 2>/dev/null || git add daemon/package.json
+    fi
     
     # Add any other uncommitted changes if they exist
     if [[ -n $(git status --porcelain) ]]; then
         git add .
     fi
     
+    local commit_msg
+    if [[ "$packages" == "all" ]]; then
+        commit_msg="chore: bump version to $version"
+    else
+        commit_msg="chore: bump $packages version to $version"
+    fi
+    
     print_info "Committing version bump..."
-    git commit -m "chore: bump agent-tab version to $version"
+    git commit -m "$commit_msg"
     
     print_info "Pushing changes to remote..."
     git push origin $(git branch --show-current)
@@ -154,7 +184,7 @@ commit_and_push() {
 # Function to create and push git tag
 create_and_push_tag() {
     local version=$1
-    local tag="agent-tab-v$version"
+    local tag="v$version"
     
     print_info "Creating git tag: $tag"
     git tag "$tag"
@@ -168,7 +198,7 @@ create_and_push_tag() {
 # Function to get next beta number for a version
 get_next_beta_number() {
     local base_version=$1
-    local latest_beta=$(git tag -l "agent-tab-v${base_version}-beta.*" | sort -V | tail -1)
+    local latest_beta=$(git tag -l "v${base_version}-beta.*" | sort -V | tail -1)
     
     if [[ -z "$latest_beta" ]]; then
         echo "1"
@@ -178,21 +208,47 @@ get_next_beta_number() {
     fi
 }
 
+# Function to release CLI
+release_cli() {
+    local new_version=$1
+    local is_beta=$2
+    
+    print_info "Releasing CLI..."
+    update_cli_version "$new_version"
+}
+
+# Function to release Daemon
+release_daemon() {
+    local new_version=$1
+    local is_beta=$2
+    
+    print_info "Releasing Daemon..."
+    update_daemon_version "$new_version"
+}
+
 # Main script logic
 main() {
-    print_info "Starting release process for agent-tab..."
+    print_info "Starting release process..."
     
-    # Parse arguments for --beta flag
-    local is_beta=false
+    # Parse arguments
+    local release_target=""
     local version_input=""
+    local is_beta=false
     
     for arg in "$@"; do
-        if [[ "$arg" == "--beta" ]]; then
+        if [[ "$arg" == "cli" || "$arg" == "daemon" || "$arg" == "all" ]]; then
+            release_target="$arg"
+        elif [[ "$arg" == "--beta" ]]; then
             is_beta=true
-        elif [[ -z "$version_input" ]]; then
+        elif [[ -z "$version_input" && "$arg" != "" ]]; then
             version_input="$arg"
         fi
     done
+    
+    # Default to "all" if no target specified
+    if [[ -z "$release_target" ]]; then
+        release_target="all"
+    fi
     
     # Check if we're in a git repository
     if ! git rev-parse --git-dir > /dev/null 2>&1; then
@@ -200,25 +256,35 @@ main() {
         exit 1
     fi
     
-    # Check if Cargo.toml exists
-    if [[ ! -f "Cargo.toml" ]]; then
-        print_error "Cargo.toml not found in current directory"
-        exit 1
+    # Get current versions
+    local cli_version=""
+    local daemon_version=""
+    
+    if [[ "$release_target" == "all" || "$release_target" == "cli" ]]; then
+        cli_version=$(get_cli_version)
+        if [[ -z "$cli_version" ]]; then
+            print_error "Could not find version in cli/Cargo.toml"
+            exit 1
+        fi
+        print_info "Current CLI version: $cli_version"
     fi
     
-    # Get current version (strip any existing beta suffix for base version)
-    current_version=$(get_current_version)
-    base_version=$(echo "$current_version" | sed -E 's/-beta\.[0-9]+$//')
-    
-    if [[ -z "$current_version" ]]; then
-        print_error "Could not find version in Cargo.toml"
-        exit 1
+    if [[ "$release_target" == "all" || "$release_target" == "daemon" ]]; then
+        daemon_version=$(get_daemon_version)
+        if [[ -z "$daemon_version" ]]; then
+            print_error "Could not find version in daemon/package.json"
+            exit 1
+        fi
+        print_info "Current Daemon version: $daemon_version"
     fi
     
-    print_info "Current version: $current_version"
     if [[ "$is_beta" == true ]]; then
         print_info "Beta release mode enabled"
     fi
+    
+    # Use CLI version as reference for bumping (they should stay in sync for "all")
+    local current_version="${cli_version:-$daemon_version}"
+    local base_version=$(echo "$current_version" | sed -E 's/-beta\.[0-9]+$//')
     
     # Determine new version
     local new_version
@@ -275,9 +341,9 @@ main() {
     # Confirm the release
     echo ""
     if [[ "$is_beta" == true ]]; then
-        read -p "Proceed with BETA release $current_version -> $new_version? (y/N): " -n 1 -r
+        read -p "Proceed with BETA release $current_version -> $new_version for $release_target? (y/N): " -n 1 -r
     else
-        read -p "Proceed with release $current_version -> $new_version? (y/N): " -n 1 -r
+        read -p "Proceed with release $current_version -> $new_version for $release_target? (y/N): " -n 1 -r
     fi
     echo ""
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -288,20 +354,25 @@ main() {
     # Check git status
     check_git_status
     
-    # Update version in Cargo.toml
-    update_cargo_version "$new_version"
+    # Release packages
+    if [[ "$release_target" == "all" || "$release_target" == "cli" ]]; then
+        release_cli "$new_version" "$is_beta"
+    fi
+    
+    if [[ "$release_target" == "all" || "$release_target" == "daemon" ]]; then
+        release_daemon "$new_version" "$is_beta"
+    fi
     
     # Commit and push changes
-    commit_and_push "$new_version"
+    commit_and_push "$new_version" "$release_target"
     
     # Create and push tag
     create_and_push_tag "$new_version"
     
     if [[ "$is_beta" == true ]]; then
         print_success "Beta release $new_version completed successfully! 🧪"
-        print_info "Install beta from GitHub release:"
-        print_info "  curl -L https://github.com/stakpak/agent/releases/download/agent-tab-v${new_version}/agent-tab-darwin-aarch64.tar.gz | tar xz"
-        print_info "  sudo mv agent-tab /usr/local/bin/"
+        print_info "Install beta from GitHub release once built:"
+        print_info "  curl -L https://github.com/stakpak/agent/releases/download/v${new_version}/agent-tab-darwin-aarch64.tar.gz | tar xz"
     else
         print_success "Release $new_version completed successfully! 🎉"
         print_info "GitHub Actions will build and publish the release artifacts."

@@ -1,0 +1,245 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [main, beta]
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  discussions: write
+  pull-requests: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CLI_BINARY_NAME: agent-tab
+  DAEMON_PACKAGE_NAME: agent-tab-daemon
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      is_beta: ${{ steps.check.outputs.is_beta }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - name: Check release type
+        id: check
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          echo "version=$TAG" >> $GITHUB_OUTPUT
+          if [[ "$TAG" == *"-beta"* ]]; then
+            echo "is_beta=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_beta=false" >> $GITHUB_OUTPUT
+          fi
+
+  # Build CLI (Rust) binaries
+  build-cli:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-musl
+            artifact_name: agent-tab-linux-x86_64
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-musl
+            artifact_name: agent-tab-linux-aarch64
+          - os: macos-15
+            target: x86_64-apple-darwin
+            artifact_name: agent-tab-darwin-x86_64
+          - os: macos-15
+            target: aarch64-apple-darwin
+            artifact_name: agent-tab-darwin-aarch64
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+            artifact_name: agent-tab-windows-x86_64
+
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: ./cli
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.89.0
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ matrix.target }}
+          workspaces: "cli"
+
+      - name: Install MUSL tools
+        if: endsWith(matrix.target, 'linux-musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Run tests
+        run: cargo test --target ${{ matrix.target }}
+
+      - name: Prepare binary
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            7z a ../../../${{ matrix.artifact_name }}.zip ${{ env.CLI_BINARY_NAME }}.exe
+          else
+            tar czf ../../../${{ matrix.artifact_name }}.tar.gz ${{ env.CLI_BINARY_NAME }}
+          fi
+
+      - name: Upload CLI artifact
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: cli/${{ matrix.artifact_name }}.*
+          retention-days: 1
+
+  # Build Daemon (Node.js) package
+  build-daemon:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./daemon
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: daemon/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build package
+        run: npm run build:pkg
+
+      - name: Get version
+        id: version
+        run: echo "version=$(npm run version --silent)" >> $GITHUB_OUTPUT
+
+      - name: Prepare daemon package
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          mkdir -p agent-tab-daemon
+          cp dist/daemon.js agent-tab-daemon/
+          cp package.json agent-tab-daemon/
+          cp README.md agent-tab-daemon/ 2>/dev/null || true
+          tar czf ../agent-tab-daemon.tar.gz agent-tab-daemon/
+
+      - name: Upload daemon artifact
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-tab-daemon
+          path: agent-tab-daemon.tar.gz
+          retention-days: 1
+
+  # Create release with all artifacts
+  release:
+    needs: [setup, build-cli, build-daemon]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            agent-tab-linux-x86_64/agent-tab-linux-x86_64.tar.gz
+            agent-tab-linux-aarch64/agent-tab-linux-aarch64.tar.gz
+            agent-tab-darwin-x86_64/agent-tab-darwin-x86_64.tar.gz
+            agent-tab-darwin-aarch64/agent-tab-darwin-aarch64.tar.gz
+            agent-tab-windows-x86_64/agent-tab-windows-x86_64.zip
+            agent-tab-daemon/agent-tab-daemon.tar.gz
+          draft: false
+          prerelease: ${{ needs.setup.outputs.is_beta == 'true' }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Update Homebrew tap for CLI
+  homebrew:
+    needs: [setup, release]
+    if: startsWith(github.ref, 'refs/tags/') && needs.setup.outputs.is_beta == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: stakpak/homebrew-stakpak
+          token: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+
+      - name: Update Homebrew formula
+        env:
+          GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          VERSION: ${{ needs.setup.outputs.version }}
+        run: |
+          VERSION_NUM=${VERSION#v}
+          
+          curl -L "https://github.com/stakpak/agent/releases/download/${VERSION}/agent-tab-darwin-x86_64.tar.gz" -o agent-tab-darwin-x86_64.tar.gz
+          curl -L "https://github.com/stakpak/agent/releases/download/${VERSION}/agent-tab-darwin-aarch64.tar.gz" -o agent-tab-darwin-aarch64.tar.gz
+          curl -L "https://github.com/stakpak/agent/releases/download/${VERSION}/agent-tab-linux-x86_64.tar.gz" -o agent-tab-linux-x86_64.tar.gz
+          curl -L "https://github.com/stakpak/agent/releases/download/${VERSION}/agent-tab-linux-aarch64.tar.gz" -o agent-tab-linux-aarch64.tar.gz
+
+          SHA256_DARWIN_X64=$(sha256sum agent-tab-darwin-x86_64.tar.gz | cut -d ' ' -f 1)
+          SHA256_DARWIN_ARM=$(sha256sum agent-tab-darwin-aarch64.tar.gz | cut -d ' ' -f 1)
+          SHA256_LINUX_X64=$(sha256sum agent-tab-linux-x86_64.tar.gz | cut -d ' ' -f 1)
+          SHA256_LINUX_ARM=$(sha256sum agent-tab-linux-aarch64.tar.gz | cut -d ' ' -f 1)
+
+          cat > agent-tab.rb << EOF
+          class AgentTab < Formula
+            desc "Browser automation CLI for Stakpak Agent"
+            homepage "https://github.com/stakpak/agent"
+            version "${VERSION_NUM}"
+            license "MIT"
+            
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/stakpak/agent/releases/download/${VERSION}/agent-tab-darwin-aarch64.tar.gz"
+                sha256 "${SHA256_DARWIN_ARM}"
+              else
+                url "https://github.com/stakpak/agent/releases/download/${VERSION}/agent-tab-darwin-x86_64.tar.gz"
+                sha256 "${SHA256_DARWIN_X64}"
+              end
+            end
+            
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/stakpak/agent/releases/download/${VERSION}/agent-tab-linux-aarch64.tar.gz"
+                sha256 "${SHA256_LINUX_ARM}"
+              else
+                url "https://github.com/stakpak/agent/releases/download/${VERSION}/agent-tab-linux-x86_64.tar.gz"
+                sha256 "${SHA256_LINUX_X64}"
+              end
+            end
+            
+            def install
+              bin.install "agent-tab"
+            end
+            
+            test do
+              system "#{bin}/agent-tab", "--help"
+            end
+          end
+          EOF
+
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add agent-tab.rb
+          git commit -m "Update agent-tab to ${VERSION}"
+          git push
