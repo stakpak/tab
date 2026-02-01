@@ -1,9 +1,9 @@
-name: Build and Release CLI
+name: Build and Release
 
 on:
   push:
     branches: [main, beta]
-    tags: ["cli-v*"]
+    tags: ["v*"]
 
 permissions:
   contents: write
@@ -13,6 +13,7 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   CLI_BINARY_NAME: agent-tab
+  DAEMON_BINARY_NAME: agent-tab-daemon
 
 jobs:
   setup:
@@ -25,7 +26,7 @@ jobs:
         id: check
         run: |
           TAG=${GITHUB_REF#refs/tags/}
-          VERSION=${TAG#cli-v}
+          VERSION=${TAG#v}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           if [[ "$VERSION" == *"-beta"* ]]; then
             echo "is_beta=true" >> $GITHUB_OUTPUT
@@ -102,16 +103,84 @@ jobs:
           path: cli/${{ matrix.artifact_name }}.*
           retention-days: 1
 
-  release-cli:
-    needs: [setup, build-cli]
-    if: startsWith(github.ref, 'refs/tags/cli-v')
+  build-daemon:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: node18-linux-x64
+            artifact_name: agent-tab-daemon-linux-x86_64
+          - os: ubuntu-22.04-arm
+            target: node18-linux-arm64
+            artifact_name: agent-tab-daemon-linux-aarch64
+          - os: macos-15
+            target: node18-macos-x64
+            artifact_name: agent-tab-daemon-darwin-x86_64
+          - os: macos-15
+            target: node18-macos-arm64
+            artifact_name: agent-tab-daemon-darwin-aarch64
+          - os: windows-2022
+            target: node18-win-x64
+            artifact_name: agent-tab-daemon-windows-x86_64
+
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: ./daemon
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: daemon/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build bundle
+        run: npm run build:pkg
+
+      - name: Build executable
+        run: npx pkg dist/daemon.js --targets ${{ matrix.target }} --output bin/${{ env.DAEMON_BINARY_NAME }}
+
+      - name: Get version
+        id: version
+        run: echo "version=$(npm run version --silent)" >> $GITHUB_OUTPUT
+
+      - name: Prepare daemon package
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          cd bin
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            7z a ../../${{ matrix.artifact_name }}.zip ${{ env.DAEMON_BINARY_NAME }}.exe
+          else
+            tar czf ../../${{ matrix.artifact_name }}.tar.gz ${{ env.DAEMON_BINARY_NAME }}
+          fi
+
+      - name: Upload daemon artifact
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_name }}.*
+          retention-days: 1
+
+  release:
+    needs: [setup, build-cli, build-daemon]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
 
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
 
-      - name: Create CLI Release
+      - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
@@ -120,17 +189,22 @@ jobs:
             agent-tab-darwin-x86_64/agent-tab-darwin-x86_64.tar.gz
             agent-tab-darwin-aarch64/agent-tab-darwin-aarch64.tar.gz
             agent-tab-windows-x86_64/agent-tab-windows-x86_64.zip
+            agent-tab-daemon-linux-x86_64/agent-tab-daemon-linux-x86_64.tar.gz
+            agent-tab-daemon-linux-aarch64/agent-tab-daemon-linux-aarch64.tar.gz
+            agent-tab-daemon-darwin-x86_64/agent-tab-daemon-darwin-x86_64.tar.gz
+            agent-tab-daemon-darwin-aarch64/agent-tab-daemon-darwin-aarch64.tar.gz
+            agent-tab-daemon-windows-x86_64/agent-tab-daemon-windows-x86_64.zip
           draft: false
           prerelease: ${{ needs.setup.outputs.is_beta == 'true' }}
           generate_release_notes: true
-          name: "Agent Tab CLI v${{ needs.setup.outputs.version }}"
-          tag_name: "cli-v${{ needs.setup.outputs.version }}"
+          name: "Agent Tab v${{ needs.setup.outputs.version }}"
+          tag_name: "v${{ needs.setup.outputs.version }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   homebrew:
-    needs: [setup, release-cli]
-    if: startsWith(github.ref, 'refs/tags/cli-v') && needs.setup.outputs.is_beta == 'false'
+    needs: [setup, release]
+    if: startsWith(github.ref, 'refs/tags/v') && needs.setup.outputs.is_beta == 'false'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -145,10 +219,10 @@ jobs:
         run: |
           VERSION_NUM=${VERSION}
           
-          curl -L "https://github.com/stakpak/agent/releases/download/cli-v${VERSION}/agent-tab-darwin-x86_64.tar.gz" -o agent-tab-darwin-x86_64.tar.gz
-          curl -L "https://github.com/stakpak/agent/releases/download/cli-v${VERSION}/agent-tab-darwin-aarch64.tar.gz" -o agent-tab-darwin-aarch64.tar.gz
-          curl -L "https://github.com/stakpak/agent/releases/download/cli-v${VERSION}/agent-tab-linux-x86_64.tar.gz" -o agent-tab-linux-x86_64.tar.gz
-          curl -L "https://github.com/stakpak/agent/releases/download/cli-v${VERSION}/agent-tab-linux-aarch64.tar.gz" -o agent-tab-linux-aarch64.tar.gz
+          curl -L "https://github.com/stakpak/agent/releases/download/v${VERSION}/agent-tab-darwin-x86_64.tar.gz" -o agent-tab-darwin-x86_64.tar.gz
+          curl -L "https://github.com/stakpak/agent/releases/download/v${VERSION}/agent-tab-darwin-aarch64.tar.gz" -o agent-tab-darwin-aarch64.tar.gz
+          curl -L "https://github.com/stakpak/agent/releases/download/v${VERSION}/agent-tab-linux-x86_64.tar.gz" -o agent-tab-linux-x86_64.tar.gz
+          curl -L "https://github.com/stakpak/agent/releases/download/v${VERSION}/agent-tab-linux-aarch64.tar.gz" -o agent-tab-linux-aarch64.tar.gz
 
           SHA256_DARWIN_X64=$(sha256sum agent-tab-darwin-x86_64.tar.gz | cut -d ' ' -f 1)
           SHA256_DARWIN_ARM=$(sha256sum agent-tab-darwin-aarch64.tar.gz | cut -d ' ' -f 1)
@@ -164,20 +238,20 @@ jobs:
             
             on_macos do
               if Hardware::CPU.arm?
-                url "https://github.com/stakpak/agent/releases/download/cli-v${VERSION}/agent-tab-darwin-aarch64.tar.gz"
+                url "https://github.com/stakpak/agent/releases/download/v${VERSION}/agent-tab-darwin-aarch64.tar.gz"
                 sha256 "${SHA256_DARWIN_ARM}"
               else
-                url "https://github.com/stakpak/agent/releases/download/cli-v${VERSION}/agent-tab-darwin-x86_64.tar.gz"
+                url "https://github.com/stakpak/agent/releases/download/v${VERSION}/agent-tab-darwin-x86_64.tar.gz"
                 sha256 "${SHA256_DARWIN_X64}"
               end
             end
             
             on_linux do
               if Hardware::CPU.arm?
-                url "https://github.com/stakpak/agent/releases/download/cli-v${VERSION}/agent-tab-linux-aarch64.tar.gz"
+                url "https://github.com/stakpak/agent/releases/download/v${VERSION}/agent-tab-linux-aarch64.tar.gz"
                 sha256 "${SHA256_LINUX_ARM}"
               else
-                url "https://github.com/stakpak/agent/releases/download/cli-v${VERSION}/agent-tab-linux-x86_64.tar.gz"
+                url "https://github.com/stakpak/agent/releases/download/v${VERSION}/agent-tab-linux-x86_64.tar.gz"
                 sha256 "${SHA256_LINUX_X64}"
               end
             end

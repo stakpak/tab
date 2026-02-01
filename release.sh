@@ -28,33 +28,22 @@ print_error() {
 
 # Function to show usage
 show_usage() {
-    echo "Usage: $0 [cli|daemon] [patch|minor|major|<specific_version>] [--beta]"
+    echo "Usage: $0 [patch|minor|major|<specific_version>] [--beta]"
     echo ""
     echo "Examples:"
-    echo "  $0 cli patch              # Bump CLI patch version"
-    echo "  $0 daemon minor           # Bump Daemon minor version"
-    echo "  $0 cli 1.2.3              # Set CLI specific version to 1.2.3"
-    echo "  $0 daemon 1.2.3 --beta    # Create Daemon beta release"
-    echo "  $0 cli                    # Interactive mode for CLI"
-    echo "  $0 daemon                 # Interactive mode for Daemon"
+    echo "  $0 patch              # Bump patch version"
+    echo "  $0 minor              # Bump minor version"
+    echo "  $0 1.2.3              # Set specific version to 1.2.3"
+    echo "  $0 patch --beta       # Create beta release"
+    echo "  $0                    # Interactive mode"
     echo ""
-    echo "Beta releases:"
-    echo "  $0 cli patch --beta       # Create CLI beta release"
-    echo "  $0 daemon --beta          # Interactive mode with beta suffix"
-    echo ""
-    echo "Note: Each package is released independently with its own tag:"
-    echo "  CLI tags: cli-v0.1.0, cli-v0.1.1-beta.1, etc."
-    echo "  Daemon tags: daemon-v0.1.0, daemon-v0.1.1-beta.1, etc."
+    echo "Note: This creates a unified release containing both CLI and Daemon artifacts."
+    echo "Tags are created as: v0.1.0, v0.1.1-beta.1, etc."
 }
 
-# Function to get current version from files
+# Function to get current version from CLI Cargo.toml
 get_current_version() {
-    local package=$1
-    if [[ "$package" == "cli" ]]; then
-        grep '^version = ' cli/Cargo.toml | head -1 | sed -E 's/version = "([^"]+)"/\1/'
-    else
-        node -p "require('./daemon/package.json').version"
-    fi
+    grep '^version = ' cli/Cargo.toml | head -1 | sed -E 's/version = "([^"]+)"/\1/'
 }
 
 # Function to validate semantic version format
@@ -99,29 +88,29 @@ bump_version() {
     echo "$major.$minor.$patch"
 }
 
-# Function to update version in package files
+# Function to update version in all package files
 update_version() {
-    local package=$1
-    local new_version=$2
+    local new_version=$1
     
-    if [[ "$package" == "cli" ]]; then
-        local temp_file=$(mktemp)
-        sed "s/^version = \".*\"/version = \"$new_version\"/" cli/Cargo.toml > "$temp_file"
-        mv "$temp_file" cli/Cargo.toml
-        print_success "Updated CLI version to $new_version"
-        
-        print_info "Updating CLI Cargo.lock..."
-        (cd cli && cargo update --package agent-tab)
-        print_success "Updated CLI Cargo.lock"
-    else
-        node -e "
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('./daemon/package.json', 'utf8'));
-            pkg.version = '$new_version';
-            fs.writeFileSync('./daemon/package.json', JSON.stringify(pkg, null, 2) + '\n');
-        "
-        print_success "Updated Daemon version to $new_version"
-    fi
+    # Update CLI Cargo.toml
+    local temp_file=$(mktemp)
+    sed "s/^version = \".*\"/version = \"$new_version\"/" cli/Cargo.toml > "$temp_file"
+    mv "$temp_file" cli/Cargo.toml
+    print_success "Updated CLI Cargo.toml version to $new_version"
+    
+    # Update daemon package.json
+    node -e "
+        const fs = require('fs');
+        const pkg = JSON.parse(fs.readFileSync('./daemon/package.json', 'utf8'));
+        pkg.version = '$new_version';
+        fs.writeFileSync('./daemon/package.json', JSON.stringify(pkg, null, 2) + '\n');
+    "
+    print_success "Updated daemon package.json version to $new_version"
+    
+    # Update CLI Cargo.lock
+    print_info "Updating CLI Cargo.lock..."
+    (cd cli && cargo update --package agent-tab)
+    print_success "Updated CLI Cargo.lock"
 }
 
 # Function to check if git working directory is clean
@@ -142,16 +131,12 @@ check_git_status() {
 
 # Function to commit and push changes
 commit_and_push() {
-    local package=$1
-    local version=$2
+    local version=$1
     
     print_info "Adding changes to git..."
     
-    if [[ "$package" == "cli" ]]; then
-        git add cli/Cargo.toml cli/Cargo.lock
-    else
-        git add daemon/package.json daemon/package-lock.json 2>/dev/null || git add daemon/package.json
-    fi
+    # Add version files
+    git add cli/Cargo.toml cli/Cargo.lock daemon/package.json daemon/package-lock.json 2>/dev/null || git add cli/Cargo.toml cli/Cargo.lock daemon/package.json
     
     # Add any other uncommitted changes if they exist
     if [[ -n $(git status --porcelain) ]]; then
@@ -159,7 +144,7 @@ commit_and_push() {
     fi
     
     print_info "Committing version bump..."
-    git commit -m "chore: bump $package version to $version"
+    git commit -m "chore: bump version to $version"
     
     print_info "Pushing changes to remote..."
     git push origin $(git branch --show-current)
@@ -169,9 +154,8 @@ commit_and_push() {
 
 # Function to create and push git tag
 create_and_push_tag() {
-    local package=$1
-    local version=$2
-    local tag="${package}-v${version}"
+    local version=$1
+    local tag="v${version}"
     
     print_info "Creating git tag: $tag"
     git tag "$tag"
@@ -184,9 +168,8 @@ create_and_push_tag() {
 
 # Function to get next beta number for a version
 get_next_beta_number() {
-    local package=$1
-    local base_version=$2
-    local latest_beta=$(git tag -l "${package}-v${base_version}-beta.*" | sort -V | tail -1)
+    local base_version=$1
+    local latest_beta=$(git tag -l "v${base_version}-beta.*" | sort -V | tail -1)
     
     if [[ -z "$latest_beta" ]]; then
         echo "1"
@@ -199,27 +182,21 @@ get_next_beta_number() {
 # Main script logic
 main() {
     # Parse arguments
-    local package=""
     local version_input=""
     local is_beta=false
     
     for arg in "$@"; do
-        if [[ "$arg" == "cli" || "$arg" == "daemon" ]]; then
-            package="$arg"
-        elif [[ "$arg" == "--beta" ]]; then
+        if [[ "$arg" == "--beta" ]]; then
             is_beta=true
+        elif [[ "$arg" == "-h" || "$arg" == "--help" ]]; then
+            show_usage
+            exit 0
         elif [[ -z "$version_input" && "$arg" != "" ]]; then
             version_input="$arg"
         fi
     done
     
-    # Default to showing usage if no package specified
-    if [[ -z "$package" ]]; then
-        show_usage
-        exit 1
-    fi
-    
-    print_info "Starting release process for $package..."
+    print_info "Starting release process for unified artifact (CLI + Daemon)..."
     
     # Check if we're in a git repository
     if ! git rev-parse --git-dir > /dev/null 2>&1; then
@@ -227,16 +204,22 @@ main() {
         exit 1
     fi
     
-    # Get current version
-    local current_version=$(get_current_version "$package")
-    local base_version=$(echo "$current_version" | sed -E 's/-beta\.[0-9]+$//')
-    
-    if [[ -z "$current_version" ]]; then
-        print_error "Could not find version for $package"
+    # Check if CLI Cargo.toml exists
+    if [[ ! -f "cli/Cargo.toml" ]]; then
+        print_error "cli/Cargo.toml not found"
         exit 1
     fi
     
-    print_info "Current $package version: $current_version"
+    # Get current version
+    local current_version=$(get_current_version)
+    local base_version=$(echo "$current_version" | sed -E 's/-beta\.[0-9]+$//')
+    
+    if [[ -z "$current_version" ]]; then
+        print_error "Could not find version in cli/Cargo.toml"
+        exit 1
+    fi
+    
+    print_info "Current version: $current_version"
     if [[ "$is_beta" == true ]]; then
         print_info "Beta release mode enabled"
     fi
@@ -286,7 +269,7 @@ main() {
     
     # Add beta suffix if --beta flag is set
     if [[ "$is_beta" == true ]]; then
-        beta_num=$(get_next_beta_number "$package" "$new_version")
+        beta_num=$(get_next_beta_number "$new_version")
         new_version="${new_version}-beta.${beta_num}"
         print_info "Beta version: $new_version"
     fi
@@ -296,9 +279,9 @@ main() {
     # Confirm the release
     echo ""
     if [[ "$is_beta" == true ]]; then
-        read -p "Proceed with BETA release $current_version -> $new_version for $package? (y/N): " -n 1 -r
+        read -p "Proceed with BETA release $current_version -> $new_version? (y/N): " -n 1 -r
     else
-        read -p "Proceed with release $current_version -> $new_version for $package? (y/N): " -n 1 -r
+        read -p "Proceed with release $current_version -> $new_version? (y/N): " -n 1 -r
     fi
     echo ""
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -310,20 +293,20 @@ main() {
     check_git_status
     
     # Update version
-    update_version "$package" "$new_version"
+    update_version "$new_version"
     
     # Commit and push changes
-    commit_and_push "$package" "$new_version"
+    commit_and_push "$new_version"
     
     # Create and push tag
-    create_and_push_tag "$package" "$new_version"
+    create_and_push_tag "$new_version"
     
     if [[ "$is_beta" == true ]]; then
-        print_success "Beta release $new_version for $package completed successfully! 🧪"
+        print_success "Beta release $new_version completed successfully!"
     else
-        print_success "Release $new_version for $package completed successfully! 🎉"
+        print_success "Release $new_version completed successfully!"
     fi
-    print_info "GitHub Actions will build and publish the release."
+    print_info "GitHub Actions will build and publish the unified release (CLI + Daemon)."
     print_info "Check the GitHub Actions workflow for build status."
 }
 
