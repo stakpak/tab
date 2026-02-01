@@ -27,7 +27,7 @@ test.describe('Popup UI', () => {
       const page = await context.newPage();
       await page.goto(`chrome-extension://${extensionId}/dist/popup.html`);
 
-      await expect(page.locator('h1')).toHaveText('LLM Browser Agent');
+      await expect(page.locator('h1')).toHaveText('StakTab');
       await expect(page.locator('#ws-url')).toHaveValue('ws://localhost:9222');
       await expect(page.locator('#connect-btn')).toBeVisible();
     } finally {
