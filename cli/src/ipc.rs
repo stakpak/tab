@@ -5,14 +5,31 @@
 //!
 //! Protocol reference: packages/daemon/src/ipc-server.ts
 
-use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::time::Duration;
+
+#[cfg(unix)]
+use std::os::unix::net::UnixStream;
+
+#[cfg(windows)]
+use std::fs::OpenOptions;
+#[cfg(windows)]
+use std::os::windows::fs::OpenOptionsExt;
 
 use crate::config::Config;
 use crate::error::{CliError, Result};
 use crate::types::{Command, CommandResponse, IpcMessage, IpcMessageType};
+
+// =============================================================================
+// Platform-specific stream types
+// =============================================================================
+
+#[cfg(unix)]
+type IpcStream = UnixStream;
+
+#[cfg(windows)]
+type IpcStream = std::fs::File;
 
 // =============================================================================
 // Constants
@@ -53,12 +70,15 @@ impl IpcClient {
     /// Send a command to the daemon and wait for response
     pub fn send_command(&self, command: Command) -> Result<CommandResponse> {
         let connect_timeout = Duration::from_millis(self.config.connection_timeout_ms);
-        let command_timeout = Duration::from_millis(self.config.command_timeout_ms);
+        let _command_timeout = Duration::from_millis(self.config.command_timeout_ms);
         let socket_path = self.config.ipc_socket_path.as_path();
         let mut stream = connect_to_daemon(socket_path, connect_timeout)?;
 
-        stream.set_read_timeout(Some(command_timeout))?;
-        stream.set_write_timeout(Some(command_timeout))?;
+        #[cfg(unix)]
+        {
+            stream.set_read_timeout(Some(_command_timeout))?;
+            stream.set_write_timeout(Some(_command_timeout))?;
+        }
 
         let payload = serde_json::to_value(command)?;
         let message = IpcMessage {
@@ -87,7 +107,8 @@ impl IpcClient {
     }
 }
 
-fn connect_to_daemon(socket_path: &Path, timeout: Duration) -> Result<UnixStream> {
+#[cfg(unix)]
+fn connect_to_daemon(socket_path: &Path, timeout: Duration) -> Result<IpcStream> {
     if !socket_path.exists() {
         return Err(CliError::DaemonNotRunning(format!(
             "socket not found at {}",
@@ -104,6 +125,40 @@ fn connect_to_daemon(socket_path: &Path, timeout: Duration) -> Result<UnixStream
     Ok(stream)
 }
 
+#[cfg(windows)]
+fn connect_to_daemon(pipe_path: &Path, _timeout: Duration) -> Result<IpcStream> {
+    // Windows named pipe path format: \\.\pipe\pipe-name
+    // The config should provide the full pipe path
+    let pipe_path_str = pipe_path.to_string_lossy();
+
+    // Convert Unix-style socket path to Windows named pipe if needed
+    let pipe_name = if pipe_path_str.starts_with(r"\\.\pipe\") {
+        pipe_path_str.to_string()
+    } else {
+        // Extract the filename and create a named pipe path
+        let name = pipe_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("tab-daemon");
+        format!(r"\\.\pipe\{}", name)
+    };
+
+    let stream = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(0) // FILE_FLAG_OVERLAPPED can be added if async needed
+        .open(&pipe_name)
+        .map_err(|err| {
+            if err.kind() == std::io::ErrorKind::NotFound {
+                CliError::DaemonNotRunning(format!("pipe not found at {}", pipe_name))
+            } else {
+                CliError::ConnectionFailed(err.to_string())
+            }
+        })?;
+
+    Ok(stream)
+}
+
 fn serialize_message(message: &IpcMessage) -> Result<Vec<u8>> {
     let mut json = serde_json::to_vec(message)?;
     json.push(MESSAGE_DELIMITER);
@@ -115,13 +170,13 @@ fn deserialize_message(data: &[u8]) -> Result<IpcMessage> {
 }
 
 // =============================================================================
-fn send_bytes(stream: &mut UnixStream, data: &[u8]) -> Result<()> {
+fn send_bytes<W: Write>(stream: &mut W, data: &[u8]) -> Result<()> {
     stream.write_all(data)?;
     stream.flush()?;
     Ok(())
 }
 
-fn read_message(stream: &mut UnixStream) -> Result<Vec<u8>> {
+fn read_message<R: Read>(stream: &mut R) -> Result<Vec<u8>> {
     let mut reader = BufReader::new(stream);
     let mut buf = Vec::new();
     let bytes = reader.read_until(MESSAGE_DELIMITER, &mut buf)?;
@@ -152,13 +207,6 @@ pub fn create_client_with_config(config: Config) -> IpcClient {
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::fs;
-    use std::io::{BufRead, BufReader, Write};
-    use std::os::unix::net::UnixListener;
-    use std::os::unix::net::UnixStream;
-    use std::path::PathBuf;
-    use std::thread;
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     #[test]
     fn serialize_message_appends_newline_delimiter() {
@@ -189,6 +237,26 @@ mod tests {
         let value = serde_json::to_value(&message).expect("message to value");
         assert_eq!(value, json!({"type": "pong", "payload": null}));
     }
+
+    #[test]
+    fn create_client_returns_client_with_default_config() {
+        let client = create_client();
+        // Just verify that it creates a client without panicking
+        assert_eq!(client.config.connection_timeout_ms, 5000);
+        assert_eq!(client.config.command_timeout_ms, 30000);
+    }
+}
+
+#[cfg(all(test, unix))]
+mod unix_tests {
+    use super::*;
+    use serde_json::json;
+    use std::fs;
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::net::{UnixListener, UnixStream};
+    use std::path::PathBuf;
+    use std::thread;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     #[test]
     fn read_message_reads_until_delimiter() {
@@ -336,13 +404,5 @@ mod tests {
 
     fn cleanup_socket(path: &PathBuf) {
         let _ = fs::remove_file(path);
-    }
-
-    #[test]
-    fn create_client_returns_client_with_default_config() {
-        let client = create_client();
-        // Just verify that it creates a client without panicking
-        assert_eq!(client.config.connection_timeout_ms, 5000);
-        assert_eq!(client.config.command_timeout_ms, 30000);
     }
 }
