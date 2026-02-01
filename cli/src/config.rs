@@ -105,6 +105,10 @@ pub fn load_config() -> Config {
 mod tests {
     use super::*;
     use std::env;
+    use std::sync::Mutex;
+
+    // Mutex to serialize tests that modify environment variables
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
     fn default_config_has_correct_values() {
@@ -120,6 +124,7 @@ mod tests {
 
     #[test]
     fn from_env_loads_socket_path_from_environment() {
+        let _lock = ENV_MUTEX.lock().unwrap();
         let test_path = "/tmp/test-socket.sock";
         env::set_var(ENV_IPC_SOCKET_PATH, test_path);
 
@@ -131,6 +136,7 @@ mod tests {
 
     #[test]
     fn from_env_loads_session_name_from_environment() {
+        let _lock = ENV_MUTEX.lock().unwrap();
         let test_session = "test-session";
         env::set_var(ENV_SESSION_NAME, test_session);
 
@@ -142,6 +148,7 @@ mod tests {
 
     #[test]
     fn from_env_uses_defaults_when_env_vars_not_set() {
+        let _lock = ENV_MUTEX.lock().unwrap();
         env::remove_var(ENV_IPC_SOCKET_PATH);
         env::remove_var(ENV_SESSION_NAME);
 
@@ -155,6 +162,7 @@ mod tests {
 
     #[test]
     fn get_socket_path_returns_env_var_when_set() {
+        let _lock = ENV_MUTEX.lock().unwrap();
         let test_path = "/tmp/override-socket.sock";
         env::set_var(ENV_IPC_SOCKET_PATH, test_path);
 
@@ -166,6 +174,7 @@ mod tests {
 
     #[test]
     fn get_socket_path_returns_config_value_when_env_not_set() {
+        let _lock = ENV_MUTEX.lock().unwrap();
         env::remove_var(ENV_IPC_SOCKET_PATH);
 
         let config = Config {
@@ -177,6 +186,7 @@ mod tests {
 
     #[test]
     fn load_config_returns_env_based_config() {
+        let _lock = ENV_MUTEX.lock().unwrap();
         env::remove_var(ENV_IPC_SOCKET_PATH);
         env::remove_var(ENV_SESSION_NAME);
 
