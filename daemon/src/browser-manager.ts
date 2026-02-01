@@ -1,32 +1,19 @@
-/**
- * Browser Manager - Launches and manages browser processes
- *
- * Responsible for starting headed Chromium-based browsers with the tab extension loaded.
- */
-
 import { spawn, type ChildProcess } from "node:child_process";
-import { access, constants, mkdir } from "node:fs/promises";
-import { platform, tmpdir } from "node:os";
-import { join } from "node:path";
+import { access, constants } from "node:fs/promises";
+import { platform } from "node:os";
 import type {
   SessionId,
   BrowserLaunchOptions,
   BrowserProcessInfo,
-  DaemonConfig,
+  DaemonConfig
 } from "./types.js";
 
-/**
- * Event handlers for browser process events
- */
 export interface BrowserEventHandlers {
   onBrowserStarted: (sessionId: SessionId, process: ChildProcess) => void;
   onBrowserExited: (sessionId: SessionId, code: number | null) => void;
   onBrowserError: (sessionId: SessionId, error: Error) => void;
 }
 
-/**
- * Common browser executable paths by platform
- */
 const BROWSER_PATHS: Record<string, string[]> = {
   linux: [
     "/usr/bin/google-chrome",
@@ -50,13 +37,153 @@ const BROWSER_PATHS: Record<string, string[]> = {
   ],
 };
 
-/**
- * Browser Manager class
- * Handles launching and monitoring browser processes
- */
+class BrowserInstance {
+  private process: ChildProcess;
+  private info: BrowserProcessInfo;
+  private exitPromise: Promise<number | null>;
+  private resolveExit?: (code: number | null) => void;
+
+  constructor(
+    process: ChildProcess,
+    public readonly sessionId: SessionId,
+    private eventHandlers: BrowserEventHandlers | null,
+  ) {
+    this.process = process;
+    this.info = {
+      pid: process.pid!,
+      sessionId,
+      launchedAt: new Date(),
+    };
+
+    // Create promise that resolves when process exits
+    this.exitPromise = new Promise((resolve) => {
+      this.resolveExit = resolve;
+    });
+
+    // Set up all event handlers immediately
+    this.setupEventHandlers();
+  }
+
+  /**
+   * Set up process event handlers
+   */
+  private setupEventHandlers(): void {
+    this.process.on("exit", (code, signal) => {
+      this.handleExit(code, signal);
+    });
+
+    this.process.on("error", (error) => {
+      this.handleError(error);
+    });
+
+    // Notify that browser has started
+    if (this.eventHandlers) {
+      this.eventHandlers.onBrowserStarted(this.sessionId, this.process);
+    }
+  }
+
+  /**
+   * Handle process exit event
+   */
+  private handleExit(code: number | null, signal: string | null): void {
+    // Log exit reason
+    if (signal) {
+      console.log(`Browser for session ${this.sessionId} exited with signal: ${signal}`);
+    } else {
+      console.log(`Browser for session ${this.sessionId} exited with code: ${code}`);
+    }
+
+    // Notify via event handler
+    if (this.eventHandlers) {
+      this.eventHandlers.onBrowserExited(this.sessionId, code);
+    }
+
+    // Resolve the exit promise
+    if (this.resolveExit) {
+      this.resolveExit(code);
+    }
+  }
+
+  /**
+   * Handle process error event
+   */
+  private handleError(error: Error): void {
+    console.error(`Browser error for session ${this.sessionId}:`, error.message);
+
+    // Notify via event handler
+    if (this.eventHandlers) {
+      this.eventHandlers.onBrowserError(this.sessionId, error);
+    }
+  }
+
+  /**
+   * Kill the browser process
+   */
+  async kill(): Promise<boolean> {
+    if (!this.isRunning()) {
+      return false;
+    }
+
+    return new Promise((resolve) => {
+      let killed = false;
+
+      // Set up exit handler
+      const onExit = () => {
+        killed = true;
+        resolve(true);
+      };
+
+      this.process.once("exit", onExit);
+
+      // Send SIGTERM for graceful shutdown
+      this.process.kill("SIGTERM");
+
+      // Wait for graceful exit with timeout (5 seconds)
+      setTimeout(() => {
+        if (!killed) {
+          // Force kill with SIGKILL
+          this.process.kill("SIGKILL");
+          // Give it a moment then resolve
+          setTimeout(() => {
+            this.process.removeListener("exit", onExit);
+            resolve(true);
+          }, 500);
+        }
+      }, 5000);
+    });
+  }
+
+  /**
+   * Wait for the process to exit
+   */
+  async waitForExit(): Promise<number | null> {
+    return this.exitPromise;
+  }
+
+  /**
+   * Check if the browser process is still running
+   */
+  isRunning(): boolean {
+    return this.process.exitCode === null && !this.process.killed;
+  }
+
+  /**
+   * Get the underlying process
+   */
+  getProcess(): ChildProcess {
+    return this.process;
+  }
+
+  /**
+   * Get process information
+   */
+  getInfo(): BrowserProcessInfo {
+    return { ...this.info };
+  }
+}
+
 export class BrowserManager {
-  private processes: Map<SessionId, ChildProcess> = new Map();
-  private processInfo: Map<SessionId, BrowserProcessInfo> = new Map();
+  private instances: Map<SessionId, BrowserInstance> = new Map();
   private eventHandlers: BrowserEventHandlers | null = null;
 
   constructor(private config: DaemonConfig) { }
@@ -115,30 +242,20 @@ export class BrowserManager {
       stdio: ["ignore", "pipe", "pipe"],
     });
 
-    // Set up process event handlers
-    browserProcess.on("exit", (code, signal) => {
-      this.handleProcessExit(sessionId, code, signal);
-    });
-
-    browserProcess.on("error", (error) => {
-      this.handleProcessError(sessionId, error);
-    });
-
-    // Store in processes map
-    this.processes.set(sessionId, browserProcess);
-
-    // Store process info
-    const info: BrowserProcessInfo = {
-      pid: browserProcess.pid!,
+    // Create browser instance - it will set up all event handlers
+    const instance = new BrowserInstance(
+      browserProcess,
       sessionId,
-      launchedAt: new Date(),
-    };
-    this.processInfo.set(sessionId, info);
+      this.eventHandlers,
+    );
 
-    // Notify via onBrowserStarted
-    if (this.eventHandlers) {
-      this.eventHandlers.onBrowserStarted(sessionId, browserProcess);
-    }
+    // Store instance
+    this.instances.set(sessionId, instance);
+
+    // Set up cleanup when process exits
+    instance.waitForExit().then(() => {
+      this.instances.delete(sessionId);
+    });
 
     return browserProcess;
   }
@@ -147,92 +264,20 @@ export class BrowserManager {
    * Kill a browser process for a session
    */
   async killBrowser(sessionId: SessionId): Promise<boolean> {
-    const process = this.processes.get(sessionId);
-    if (!process) {
+    const instance = this.instances.get(sessionId);
+    if (!instance) {
       return false;
     }
 
-    return new Promise((resolve) => {
-      let killed = false;
-
-      // Set up exit handler
-      const onExit = () => {
-        killed = true;
-        resolve(true);
-      };
-
-      process.once("exit", onExit);
-
-      // Send SIGTERM for graceful shutdown
-      process.kill("SIGTERM");
-
-      // Wait for graceful exit with timeout (5 seconds)
-      setTimeout(() => {
-        if (!killed) {
-          // Force kill with SIGKILL
-          process.kill("SIGKILL");
-          // Give it a moment then resolve
-          setTimeout(() => {
-            process.removeListener("exit", onExit);
-            resolve(true);
-          }, 500);
-        }
-      }, 5000);
-    });
+    return instance.kill();
   }
 
   /**
    * Kill all managed browser processes
    */
   async killAllBrowsers(): Promise<void> {
-    const sessionIds = Array.from(this.processes.keys());
+    const sessionIds = Array.from(this.instances.keys());
     await Promise.all(sessionIds.map((id) => this.killBrowser(id)));
-  }
-
-  // ===========================================================================
-  // Process Event Handling
-  // ===========================================================================
-
-  /**
-   * Handle browser process exit
-   */
-  private handleProcessExit(sessionId: SessionId, code: number | null, signal: string | null): void {
-    // Remove from processes map
-    this.processes.delete(sessionId);
-
-    // Remove from processInfo map
-    this.processInfo.delete(sessionId);
-
-    // Log exit reason
-    if (signal) {
-      console.log(`Browser for session ${sessionId} exited with signal: ${signal}`);
-    } else {
-      console.log(`Browser for session ${sessionId} exited with code: ${code}`);
-    }
-
-    // Notify via onBrowserExited
-    if (this.eventHandlers) {
-      this.eventHandlers.onBrowserExited(sessionId, code);
-    }
-  }
-
-  /**
-   * Handle browser process error
-   */
-  private handleProcessError(sessionId: SessionId, error: Error): void {
-    console.error(`Browser error for session ${sessionId}:`, error.message);
-
-    // Notify via onBrowserError
-    if (this.eventHandlers) {
-      this.eventHandlers.onBrowserError(sessionId, error);
-    }
-
-    // Clean up if process is no longer running
-    const process = this.processes.get(sessionId);
-    if (process && process.killed) {
-      this.processes.delete(sessionId);
-      this.processInfo.delete(sessionId);
-    }
   }
 
   // ===========================================================================
@@ -243,33 +288,34 @@ export class BrowserManager {
    * Get the browser process for a session
    */
   getProcess(sessionId: SessionId): ChildProcess | null {
-    return this.processes.get(sessionId) ?? null;
+    const instance = this.instances.get(sessionId);
+    return instance ? instance.getProcess() : null;
   }
 
   /**
    * Get process info for a session
    */
   getProcessInfo(sessionId: SessionId): BrowserProcessInfo | null {
-    return this.processInfo.get(sessionId) ?? null;
+    const instance = this.instances.get(sessionId);
+    return instance ? instance.getInfo() : null;
   }
 
   /**
    * Check if a session has a running browser
    */
   hasBrowser(sessionId: SessionId): boolean {
-    const process = this.processes.get(sessionId);
-    if (!process) {
+    const instance = this.instances.get(sessionId);
+    if (!instance) {
       return false;
     }
-    // Verify process is still running (exitCode is null if still running)
-    return process.exitCode === null && !process.killed;
+    return instance.isRunning();
   }
 
   /**
    * List all running browser processes
    */
   listBrowsers(): BrowserProcessInfo[] {
-    return Array.from(this.processInfo.values());
+    return Array.from(this.instances.values()).map((instance) => instance.getInfo());
   }
 
   // ===========================================================================
@@ -318,7 +364,6 @@ export class BrowserManager {
   // Browser Arguments
   // ===========================================================================
 
-
   private buildBrowserArgs(options: BrowserLaunchOptions): string[] {
     const args: string[] = [];
 
@@ -353,13 +398,3 @@ export class BrowserManager {
   }
 }
 
-// =============================================================================
-// Factory Function
-// =============================================================================
-
-/**
- * Create a new browser manager instance
- */
-export function createBrowserManager(config: DaemonConfig): BrowserManager {
-  return new BrowserManager(config);
-}

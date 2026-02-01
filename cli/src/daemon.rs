@@ -39,19 +39,13 @@ const DAEMON_EXECUTABLE: &str = "tab-daemon";
 /// Returns Ok(()) if daemon is running (or was successfully started)
 /// Returns Err if daemon could not be started or reached
 pub fn ensure_daemon_running(config: &Config) -> Result<()> {
-    // First, check if daemon is already running
     if is_daemon_running(config) {
         return Ok(());
     }
 
-    // Daemon not running - start it
-    eprintln!("Daemon not running, starting...");
     start_daemon(config)?;
-
-    // Wait for daemon to be ready
     wait_for_daemon_ready(config)?;
 
-    eprintln!("Daemon started successfully");
     Ok(())
 }
 

@@ -2,11 +2,11 @@
 import type { WebSocket } from "ws";
 import type { DaemonConfig, SessionId, Command, CommandResponse } from "./types.js";
 import { DEFAULT_CONFIG } from "./types.js";
-import { createIpcServer, type IpcServer } from "./ipc-server.js";
-import { createWsServer, type WsServer } from "./ws-server.js";
-import { createSessionManager, type SessionManager } from "./session-manager.js";
-import { createBrowserManager, type BrowserManager } from "./browser-manager.js";
-import { createCommandRouter, type CommandRouter } from "./command-router.js";
+import { IpcServer } from "./ipc-server.js";
+import { WsServer } from "./ws-server.js";
+import { SessionManager } from "./session-manager.js";
+import { BrowserManager } from "./browser-manager.js";
+import { CommandRouter } from "./command-router.js";
 import { setupSignalHandlers } from "./utils/signal-handler.js";
 import type { ChildProcess } from "node:child_process";
 
@@ -25,17 +25,17 @@ export class TabDaemon {
 
     constructor(config: Partial<DaemonConfig> = {}) {
         this.config = { ...DEFAULT_CONFIG, ...config };
-        this.sessionManager = createSessionManager(this.config);
-        this.wsServer = createWsServer(this.config);
+        this.sessionManager = new SessionManager(this.config);
+        this.wsServer = new WsServer(this.config);
         this.wsServer.setSessionManager(this.sessionManager);
-        this.browserManager = createBrowserManager(this.config);
-        this.commandRouter = createCommandRouter(
+        this.browserManager = new BrowserManager(this.config);
+        this.commandRouter = new CommandRouter(
             this.config,
             this.sessionManager,
             this.wsServer,
-            this.browserManager
         );
-        this.ipcServer = createIpcServer(this.config);
+        this.commandRouter.setBrowserManager(this.browserManager);
+        this.ipcServer = new IpcServer(this.config);
     }
 
     // ===========================================================================

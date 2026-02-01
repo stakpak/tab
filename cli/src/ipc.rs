@@ -21,22 +21,16 @@ use crate::types::{Command, CommandResponse, IpcMessage, IpcMessageType};
 /// Message delimiter for framing (newline-delimited JSON)
 const MESSAGE_DELIMITER: u8 = b'\n';
 
-// =============================================================================
-// IPC Client
-// =============================================================================
-
 /// IPC client for communicating with tab-daemon
 pub struct IpcClient {
     config: Config,
 }
 
 impl IpcClient {
-    /// Create a new IPC client with the given configuration
     pub fn new(config: Config) -> Self {
         Self { config }
     }
 
-    /// Check if the daemon is running by sending a ping
     pub fn ping(&self) -> Result<bool> {
         let timeout = Duration::from_millis(self.config.connection_timeout_ms);
         let socket_path = self.config.ipc_socket_path.as_path();
@@ -93,11 +87,6 @@ impl IpcClient {
     }
 }
 
-// =============================================================================
-// Connection Management
-// =============================================================================
-
-/// Establish a connection to the daemon socket
 fn connect_to_daemon(socket_path: &Path, timeout: Duration) -> Result<UnixStream> {
     if !socket_path.exists() {
         return Err(CliError::DaemonNotRunning(format!(
@@ -115,35 +104,23 @@ fn connect_to_daemon(socket_path: &Path, timeout: Duration) -> Result<UnixStream
     Ok(stream)
 }
 
-// =============================================================================
-// Message Serialization
-// =============================================================================
-
-/// Serialize an IPC message to newline-delimited JSON
 fn serialize_message(message: &IpcMessage) -> Result<Vec<u8>> {
     let mut json = serde_json::to_vec(message)?;
     json.push(MESSAGE_DELIMITER);
     Ok(json)
 }
-
-/// Deserialize an IPC message from JSON bytes
 fn deserialize_message(data: &[u8]) -> Result<IpcMessage> {
     let message: IpcMessage = serde_json::from_slice(data)?;
     Ok(message)
 }
 
 // =============================================================================
-// Low-level I/O
-// =============================================================================
-
-/// Send raw bytes over the socket
 fn send_bytes(stream: &mut UnixStream, data: &[u8]) -> Result<()> {
     stream.write_all(data)?;
     stream.flush()?;
     Ok(())
 }
 
-/// Read a complete message from the socket (until newline delimiter)
 fn read_message(stream: &mut UnixStream) -> Result<Vec<u8>> {
     let mut reader = BufReader::new(stream);
     let mut buf = Vec::new();
@@ -163,24 +140,13 @@ fn read_message(stream: &mut UnixStream) -> Result<Vec<u8>> {
     Ok(buf)
 }
 
-// =============================================================================
-// Factory Functions
-// =============================================================================
-
-/// Create a new IPC client with default configuration
 pub fn create_client() -> IpcClient {
     let config = crate::config::load_config();
     IpcClient::new(config)
 }
-
-/// Create a new IPC client with custom configuration
 pub fn create_client_with_config(config: Config) -> IpcClient {
     IpcClient::new(config)
 }
-
-// =============================================================================
-// Tests
-// =============================================================================
 
 #[cfg(test)]
 mod tests {
