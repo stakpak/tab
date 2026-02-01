@@ -31,6 +31,14 @@ fn main() -> ExitCode {
 }
 
 pub fn run(cli: Cli) -> Result<()> {
+    if matches!(cli.command, Commands::Version) {
+        println!(
+            "agent-tab v{} (https://github.com/stakpak/agent)",
+            env!("CARGO_PKG_VERSION")
+        );
+        return Ok(());
+    }
+
     if matches!(cli.command, Commands::Ping) {
         let config = config::load_config();
         let client = IpcClient::new(config);
@@ -75,6 +83,7 @@ pub fn run(cli: Cli) -> Result<()> {
         Commands::Forward => commands::ForwardCommand::default().execute(&ctx)?,
         Commands::Eval(args) => commands::EvalCommand::new(args.script).execute(&ctx)?,
         Commands::Ping => unreachable!(),
+        Commands::Version => unreachable!(),
     };
 
     let formatter = OutputFormatter::new(cli.output);

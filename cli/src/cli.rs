@@ -58,6 +58,9 @@ pub enum Commands {
 
     /// Check if daemon is running
     Ping,
+
+    /// Show version information
+    Version,
 }
 
 #[derive(Debug, Subcommand)]

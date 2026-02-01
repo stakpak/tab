@@ -3,6 +3,20 @@
 version = 4
 
 [[package]]
+name = "agent-tab"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "libc",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time",
+ "uuid",
+]
+
+[[package]]
 name = "anstream"
 version = "0.6.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -289,20 +303,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
-]
-
-[[package]]
-name = "tab"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "libc",
- "serde",
- "serde_json",
- "thiserror",
- "time",
- "uuid",
 ]
 
 [[package]]

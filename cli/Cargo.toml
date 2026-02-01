@@ -1,13 +1,14 @@
 [package]
-name = "tab"
+name = "agent-tab"
 version = "0.1.0"
 edition = "2021"
-description = "Command-line interface for browser automation through the stakpak extenstion"
+description = "Browser automation CLI plugin for Stakpak Agent - control a real browser from the command line"
 authors = ["Stakpak Team"]
 license = "MIT"
+repository = "https://github.com/stakpak/tab"
 
 [[bin]]
-name = "tab"
+name = "agent-tab"
 path = "src/main.rs"
 
 [dependencies]
