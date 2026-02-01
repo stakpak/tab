@@ -1,9 +1,9 @@
-name: Build and Release
+name: Build and Release CLI
 
 on:
   push:
     branches: [main, beta]
-    tags: ["v*"]
+    tags: ["cli-v*"]
 
 permissions:
   contents: write
@@ -13,7 +13,6 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   CLI_BINARY_NAME: agent-tab
-  DAEMON_PACKAGE_NAME: agent-tab-daemon
 
 jobs:
   setup:
@@ -26,14 +25,14 @@ jobs:
         id: check
         run: |
           TAG=${GITHUB_REF#refs/tags/}
-          echo "version=$TAG" >> $GITHUB_OUTPUT
-          if [[ "$TAG" == *"-beta"* ]]; then
+          VERSION=${TAG#cli-v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          if [[ "$VERSION" == *"-beta"* ]]; then
             echo "is_beta=true" >> $GITHUB_OUTPUT
           else
             echo "is_beta=false" >> $GITHUB_OUTPUT
           fi
 
-  # Build CLI (Rust) binaries
   build-cli:
     strategy:
       fail-fast: false
@@ -103,61 +102,16 @@ jobs:
           path: cli/${{ matrix.artifact_name }}.*
           retention-days: 1
 
-  # Build Daemon (Node.js) package
-  build-daemon:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./daemon
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: daemon/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build package
-        run: npm run build:pkg
-
-      - name: Get version
-        id: version
-        run: echo "version=$(npm run version --silent)" >> $GITHUB_OUTPUT
-
-      - name: Prepare daemon package
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          mkdir -p agent-tab-daemon
-          cp dist/daemon.js agent-tab-daemon/
-          cp package.json agent-tab-daemon/
-          cp README.md agent-tab-daemon/ 2>/dev/null || true
-          tar czf ../agent-tab-daemon.tar.gz agent-tab-daemon/
-
-      - name: Upload daemon artifact
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v4
-        with:
-          name: agent-tab-daemon
-          path: agent-tab-daemon.tar.gz
-          retention-days: 1
-
-  # Create release with all artifacts
-  release:
-    needs: [setup, build-cli, build-daemon]
-    if: startsWith(github.ref, 'refs/tags/')
+  release-cli:
+    needs: [setup, build-cli]
+    if: startsWith(github.ref, 'refs/tags/cli-v')
     runs-on: ubuntu-latest
 
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
 
-      - name: Create Release
+      - name: Create CLI Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
@@ -166,17 +120,17 @@ jobs:
             agent-tab-darwin-x86_64/agent-tab-darwin-x86_64.tar.gz
             agent-tab-darwin-aarch64/agent-tab-darwin-aarch64.tar.gz
             agent-tab-windows-x86_64/agent-tab-windows-x86_64.zip
-            agent-tab-daemon/agent-tab-daemon.tar.gz
           draft: false
           prerelease: ${{ needs.setup.outputs.is_beta == 'true' }}
           generate_release_notes: true
+          name: "Agent Tab CLI v${{ needs.setup.outputs.version }}"
+          tag_name: "cli-v${{ needs.setup.outputs.version }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Update Homebrew tap for CLI
   homebrew:
-    needs: [setup, release]
-    if: startsWith(github.ref, 'refs/tags/') && needs.setup.outputs.is_beta == 'false'
+    needs: [setup, release-cli]
+    if: startsWith(github.ref, 'refs/tags/cli-v') && needs.setup.outputs.is_beta == 'false'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -189,12 +143,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
           VERSION: ${{ needs.setup.outputs.version }}
         run: |
-          VERSION_NUM=${VERSION#v}
+          VERSION_NUM=${VERSION}
           
-          curl -L "https://github.com/stakpak/agent/releases/download/${VERSION}/agent-tab-darwin-x86_64.tar.gz" -o agent-tab-darwin-x86_64.tar.gz
-          curl -L "https://github.com/stakpak/agent/releases/download/${VERSION}/agent-tab-darwin-aarch64.tar.gz" -o agent-tab-darwin-aarch64.tar.gz
-          curl -L "https://github.com/stakpak/agent/releases/download/${VERSION}/agent-tab-linux-x86_64.tar.gz" -o agent-tab-linux-x86_64.tar.gz
-          curl -L "https://github.com/stakpak/agent/releases/download/${VERSION}/agent-tab-linux-aarch64.tar.gz" -o agent-tab-linux-aarch64.tar.gz
+          curl -L "https://github.com/stakpak/agent/releases/download/cli-v${VERSION}/agent-tab-darwin-x86_64.tar.gz" -o agent-tab-darwin-x86_64.tar.gz
+          curl -L "https://github.com/stakpak/agent/releases/download/cli-v${VERSION}/agent-tab-darwin-aarch64.tar.gz" -o agent-tab-darwin-aarch64.tar.gz
+          curl -L "https://github.com/stakpak/agent/releases/download/cli-v${VERSION}/agent-tab-linux-x86_64.tar.gz" -o agent-tab-linux-x86_64.tar.gz
+          curl -L "https://github.com/stakpak/agent/releases/download/cli-v${VERSION}/agent-tab-linux-aarch64.tar.gz" -o agent-tab-linux-aarch64.tar.gz
 
           SHA256_DARWIN_X64=$(sha256sum agent-tab-darwin-x86_64.tar.gz | cut -d ' ' -f 1)
           SHA256_DARWIN_ARM=$(sha256sum agent-tab-darwin-aarch64.tar.gz | cut -d ' ' -f 1)
@@ -210,20 +164,20 @@ jobs:
             
             on_macos do
               if Hardware::CPU.arm?
-                url "https://github.com/stakpak/agent/releases/download/${VERSION}/agent-tab-darwin-aarch64.tar.gz"
+                url "https://github.com/stakpak/agent/releases/download/cli-v${VERSION}/agent-tab-darwin-aarch64.tar.gz"
                 sha256 "${SHA256_DARWIN_ARM}"
               else
-                url "https://github.com/stakpak/agent/releases/download/${VERSION}/agent-tab-darwin-x86_64.tar.gz"
+                url "https://github.com/stakpak/agent/releases/download/cli-v${VERSION}/agent-tab-darwin-x86_64.tar.gz"
                 sha256 "${SHA256_DARWIN_X64}"
               end
             end
             
             on_linux do
               if Hardware::CPU.arm?
-                url "https://github.com/stakpak/agent/releases/download/${VERSION}/agent-tab-linux-aarch64.tar.gz"
+                url "https://github.com/stakpak/agent/releases/download/cli-v${VERSION}/agent-tab-linux-aarch64.tar.gz"
                 sha256 "${SHA256_LINUX_ARM}"
               else
-                url "https://github.com/stakpak/agent/releases/download/${VERSION}/agent-tab-linux-x86_64.tar.gz"
+                url "https://github.com/stakpak/agent/releases/download/cli-v${VERSION}/agent-tab-linux-x86_64.tar.gz"
                 sha256 "${SHA256_LINUX_X64}"
               end
             end
