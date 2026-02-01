@@ -6,10 +6,6 @@ description = "Command-line interface for browser automation through the stakpak
 authors = ["Stakpak Team"]
 license = "MIT"
 
-[lib]
-name = "tab"
-path = "src/lib.rs"
-
 [[bin]]
 name = "tab"
 path = "src/main.rs"

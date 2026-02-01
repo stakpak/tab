@@ -1,22 +1,104 @@
-#!/usr/bin/env rust
-//! Tab CLI - Control a real browser from the command line
-//!
-//! This is the main entry point for the tab CLI binary.
-//!
-//! Usage:
-//!   tab navigate https://example.com
-//!   tab snapshot
-//!   tab click @ref123
-//!   tab type @ref456 "Hello world"
-//!   tab tab list
-//!   tab --help
+pub mod cli;
+pub mod commands;
+pub mod config;
+pub mod daemon;
+pub mod error;
+pub mod ipc;
+pub mod output;
+pub mod session;
+pub mod types;
 
+use cli::{Cli, Commands, TabCommands};
+use error::{CliError, Result};
+use ipc::IpcClient;
+use output::OutputFormatter;
 use std::process::ExitCode;
 
-fn main() -> ExitCode {
-    // Execute the CLI and get the exit code
-    let code = tab::execute();
 
-    // Convert to ExitCode
-    ExitCode::from(code as u8)
+pub fn run(cli: Cli) -> Result<()> {
+
+    if matches!(cli.command, Commands::Ping) {
+        let config = config::load_config();
+        let client = IpcClient::new(config);
+        let is_running = client.ping()?;
+        if is_running {
+            println!("Daemon is running");
+            return Ok(());
+        } else {
+            return Err(CliError::DaemonNotRunning(
+                "Daemon is not responding".to_string(),
+            ));
+        }
+    }
+
+    // 1. Load configuration
+    let config = config::load_config();
+
+    // 2. Ensure daemon is running (auto-start if needed)
+    daemon::ensure_daemon_running(&config)?;
+
+    // 3. Create IPC client
+    let client = IpcClient::new(config);
+
+    // 4. Resolve session and profile
+    let (session_id, profile) =
+        session::resolve_session_and_profile(cli.session.as_deref(), cli.profile.as_deref());
+
+    // 5. Create command context
+    let ctx = commands::CommandContext::new(client, session_id, profile);
+
+    // 6. Match on command and execute
+    let response = match cli.command {
+        Commands::Navigate(args) => commands::navigate(&ctx, &args.url)?,
+        Commands::Snapshot => commands::snapshot(&ctx)?,
+        Commands::Click(args) => commands::click(&ctx, &args.r#ref)?,
+        Commands::Type(args) => commands::type_text(&ctx, &args.r#ref, &args.text)?,
+        Commands::Scroll(args) => {
+            let direction = commands::scroll::parse_direction(&args.direction)?;
+            commands::scroll(&ctx, direction, args.r#ref.as_deref(), args.amount)?
+        }
+        Commands::Tab(tab_cmd) => match tab_cmd {
+            TabCommands::New(args) => commands::tab_new(&ctx, args.url.as_deref())?,
+            TabCommands::Close => commands::tab_close(&ctx)?,
+            TabCommands::Switch(args) => commands::tab_switch(&ctx, args.tab_id)?,
+            TabCommands::List => commands::tab_list(&ctx)?,
+        },
+        Commands::Back => commands::back(&ctx)?,
+        Commands::Forward => commands::forward(&ctx)?,
+        Commands::Eval(args) => commands::eval(&ctx, &args.script)?,
+        Commands::Ping => unreachable!(), // Handled above
+    };
+
+    // 7. Format and print output
+    let output_format = match cli.output {
+        cli::OutputFormat::Human => output::OutputFormat::Human,
+        cli::OutputFormat::Json => output::OutputFormat::Json,
+        cli::OutputFormat::Quiet => output::OutputFormat::Quiet,
+    };
+    let formatter = OutputFormatter::new(output_format);
+    formatter.print_response(&response)?;
+
+    // 8. Return result
+    if response.success {
+        Ok(())
+    } else {
+        Err(CliError::CommandFailed(
+            response
+                .error
+                .unwrap_or_else(|| "Unknown error".to_string()),
+        ))
+    }
+}
+
+
+fn main() -> ExitCode {
+    let cli = cli::parse();
+
+    match run(cli) {
+        Ok(()) => ExitCode::from(0 as u8),
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            ExitCode::from(e.exit_code() as u8)
+        }
+    }
 }
