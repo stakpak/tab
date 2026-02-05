@@ -41,7 +41,7 @@ Environment Variables:
   BROWSER_PATH          Browser executable path
 
 Examples:
-  browser-daemon                Start with default setting
+  browser-daemon                Start with default settings
   browser-daemon -p 9333        Use port 9333 for WebSocket server
   browser-daemon --browser /usr/bin/chromium
         `);
