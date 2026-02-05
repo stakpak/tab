@@ -5,7 +5,7 @@ import { Command } from "commander";
 import { DaemonConfig, DEFAULT_CONFIG } from "./types.js";
 
 
-const DAEMON_VERSION = "0.1.7"
+const DAEMON_VERSION = "0.1.8"
 
 export function loadConfig(argv: string[]): DaemonConfig {
   const program = new Command();
