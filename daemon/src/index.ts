@@ -5,24 +5,7 @@ import { Command } from "commander";
 import { DaemonConfig, DEFAULT_CONFIG } from "./types.js";
 
 
-let requireFunc: NodeRequire;
-try {
-  // Handle pkg-compiled binaries where import.meta.url may be undefined
-  const metaUrl = typeof import.meta !== "undefined" && import.meta.url;
-  if (metaUrl) {
-    requireFunc = createRequire(metaUrl);
-  } else {
-    throw new Error("import.meta.url not available");
-  }
-} catch {
-  if (typeof module !== "undefined" && module && typeof module.require === "function") {
-    requireFunc = module.require.bind(module) as NodeRequire;
-  } else {
-    throw new Error("Cannot create require function: neither import.meta.url nor module.require are available");
-  }
-}
-
-const DAEMON_VERSION = requireFunc("../package.json").version;
+const DAEMON_VERSION = "0.1.7"
 
 export function loadConfig(argv: string[]): DaemonConfig {
   const program = new Command();
