@@ -116,6 +116,12 @@ update_version() {
     print_info "Updating CLI Cargo.lock..."
     (cd cli && cargo update --package browser)
     print_success "Updated CLI Cargo.lock"
+
+    # Update daemon src/index.ts
+    local ts_temp_file=$(mktemp)
+    sed -E 's/const DAEMON_VERSION = "[^"]+"/const DAEMON_VERSION = "'$new_version'"/' daemon/src/index.ts > "$ts_temp_file"
+    mv "$ts_temp_file" daemon/src/index.ts
+    print_success "Updated daemon src/index.ts version to $new_version"
 }
 
 # Function to check if git working directory is clean
@@ -141,7 +147,7 @@ commit_and_push() {
     print_info "Adding changes to git..."
     
     # Add version files
-    git add cli/Cargo.toml cli/Cargo.lock daemon/package.json daemon/package-lock.json 2>/dev/null || git add cli/Cargo.toml cli/Cargo.lock daemon/package.json
+    git add cli/Cargo.toml cli/Cargo.lock daemon/package.json daemon/package-lock.json daemon/src/index.ts 2>/dev/null || git add cli/Cargo.toml cli/Cargo.lock daemon/package.json daemon/src/index.ts
     
     # Add any other uncommitted changes if they exist
     if [[ -n $(git status --porcelain) ]]; then
