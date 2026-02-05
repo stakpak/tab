@@ -1,5 +1,5 @@
 /**
- * Type definitions for tab-daemon
+ * Type definitions for browser-daemon
  *
  * This module defines all shared types used across the daemon.
  */
@@ -248,7 +248,7 @@ export interface DaemonConfig {
  * Default daemon configuration
  */
 export const DEFAULT_CONFIG: DaemonConfig = {
-  ipcSocketPath: "/tmp/tab-daemon.sock",
+  ipcSocketPath: "/tmp/browser-daemon.sock",
   wsPort: 9222,
   heartbeatInterval: 30000,
   heartbeatTimeout: 10000,

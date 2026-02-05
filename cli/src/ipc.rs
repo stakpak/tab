@@ -38,7 +38,7 @@ type IpcStream = std::fs::File;
 /// Message delimiter for framing (newline-delimited JSON)
 const MESSAGE_DELIMITER: u8 = b'\n';
 
-/// IPC client for communicating with tab-daemon
+/// IPC client for communicating with browser-daemon
 pub struct IpcClient {
     config: Config,
 }
@@ -139,7 +139,7 @@ fn connect_to_daemon(pipe_path: &Path, _timeout: Duration) -> Result<IpcStream> 
         let name = pipe_path
             .file_name()
             .and_then(|n| n.to_str())
-            .unwrap_or("tab-daemon");
+            .unwrap_or("browser-daemon");
         format!(r"\\.\pipe\{}", name)
     };
 
@@ -399,7 +399,7 @@ mod unix_tests {
             .duration_since(UNIX_EPOCH)
             .expect("time")
             .as_nanos();
-        std::env::temp_dir().join(format!("tab-cli-{}-{}.sock", prefix, nanos))
+        std::env::temp_dir().join(format!("browser-cli-{}-{}.sock", prefix, nanos))
     }
 
     fn cleanup_socket(path: &PathBuf) {

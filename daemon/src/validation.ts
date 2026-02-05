@@ -1,5 +1,5 @@
 /**
- * Validation utilities for tab-daemon
+ * Validation utilities for browser-daemon
  */
 
 import { CommandType, Command } from "./types.js";

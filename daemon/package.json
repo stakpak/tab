@@ -1,11 +1,11 @@
 {
-  "name": "agent-tab-daemon",
-  "version": "0.1.3",
-  "description": "Browser automation daemon for Stakpak Agent - WebSocket and IPC server for controlling browsers",
+  "name": "browser-daemon",
+  "version": "0.1.5",
+  "description": "Browser automation daemon - WebSocket and IPC server for controlling browsers",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "agent-tab-daemon": "dist/daemon.js"
+    "browser-daemon": "dist/daemon.js"
   },
   "types": "dist/index.d.ts",
   "scripts": {

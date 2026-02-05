@@ -1,4 +1,4 @@
-//! Configuration for the TAB CLI
+//! Configuration for the Browser CLI
 //!
 //! Handles configuration loading from environment variables and defaults.
 
@@ -10,20 +10,20 @@ use std::path::PathBuf;
 
 /// Default Unix socket path for IPC communication
 #[cfg(unix)]
-pub const DEFAULT_IPC_SOCKET_PATH: &str = "/tmp/tab-daemon.sock";
+pub const DEFAULT_IPC_SOCKET_PATH: &str = "/tmp/browser-daemon.sock";
 
 /// Default named pipe path for IPC communication (Windows)
 #[cfg(windows)]
-pub const DEFAULT_IPC_SOCKET_PATH: &str = r"\\.\pipe\tab-daemon";
+pub const DEFAULT_IPC_SOCKET_PATH: &str = r"\\.\pipe\browser-daemon";
 
 /// Environment variable for custom socket path
-pub const ENV_IPC_SOCKET_PATH: &str = "TAB_SOCKET_PATH";
+pub const ENV_IPC_SOCKET_PATH: &str = "BROWSER_SOCKET_PATH";
 
 /// Environment variable for session name
-pub const ENV_SESSION_NAME: &str = "TAB_SESSION";
+pub const ENV_SESSION_NAME: &str = "BROWSER_SESSION";
 
 /// Environment variable for browser profile directory
-pub const ENV_PROFILE: &str = "TAB_PROFILE";
+pub const ENV_PROFILE: &str = "BROWSER_PROFILE";
 
 /// Default session name
 pub const DEFAULT_SESSION_NAME: &str = "default";

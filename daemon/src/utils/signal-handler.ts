@@ -1,6 +1,6 @@
-import type { TabDaemon } from "../daemon.js";
+import type { BrowserDaemon } from "../daemon.js";
 
-export function setupSignalHandlers(daemon: TabDaemon): void {
+export function setupSignalHandlers(daemon: BrowserDaemon): void {
 
     process.on("SIGTERM", () => {
         console.log("Received SIGTERM signal");

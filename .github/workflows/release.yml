@@ -12,8 +12,8 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  CLI_BINARY_NAME: agent-tab
-  DAEMON_BINARY_NAME: agent-tab-daemon
+  CLI_BINARY_NAME: browser
+  DAEMON_BINARY_NAME: browser-daemon
 
 jobs:
   setup:
@@ -41,19 +41,19 @@ jobs:
         include:
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-musl
-            artifact_name: agent-tab-linux-x86_64
+            artifact_name: browser-linux-x86_64
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-musl
-            artifact_name: agent-tab-linux-aarch64
+            artifact_name: browser-linux-aarch64
           - os: macos-15
             target: x86_64-apple-darwin
-            artifact_name: agent-tab-darwin-x86_64
+            artifact_name: browser-darwin-x86_64
           - os: macos-15
             target: aarch64-apple-darwin
-            artifact_name: agent-tab-darwin-aarch64
+            artifact_name: browser-darwin-aarch64
           - os: windows-2022
             target: x86_64-pc-windows-msvc
-            artifact_name: agent-tab-windows-x86_64
+            artifact_name: browser-windows-x86_64
 
     runs-on: ${{ matrix.os }}
     defaults:
@@ -110,19 +110,19 @@ jobs:
         include:
           - os: ubuntu-22.04
             target: node18-linux-x64
-            artifact_name: agent-tab-daemon-linux-x86_64
+            artifact_name: browser-daemon-linux-x86_64
           - os: ubuntu-22.04-arm
             target: node18-linux-arm64
-            artifact_name: agent-tab-daemon-linux-aarch64
+            artifact_name: browser-daemon-linux-aarch64
           - os: macos-15
             target: node18-macos-x64
-            artifact_name: agent-tab-daemon-darwin-x86_64
+            artifact_name: browser-daemon-darwin-x86_64
           - os: macos-15
             target: node18-macos-arm64
-            artifact_name: agent-tab-daemon-darwin-aarch64
+            artifact_name: browser-daemon-darwin-aarch64
           - os: windows-2022
             target: node18-win-x64
-            artifact_name: agent-tab-daemon-windows-x86_64
+            artifact_name: browser-daemon-windows-x86_64
 
     runs-on: ${{ matrix.os }}
     defaults:
@@ -184,20 +184,20 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            agent-tab-linux-x86_64/agent-tab-linux-x86_64.tar.gz
-            agent-tab-linux-aarch64/agent-tab-linux-aarch64.tar.gz
-            agent-tab-darwin-x86_64/agent-tab-darwin-x86_64.tar.gz
-            agent-tab-darwin-aarch64/agent-tab-darwin-aarch64.tar.gz
-            agent-tab-windows-x86_64/agent-tab-windows-x86_64.zip
-            agent-tab-daemon-linux-x86_64/agent-tab-daemon-linux-x86_64.tar.gz
-            agent-tab-daemon-linux-aarch64/agent-tab-daemon-linux-aarch64.tar.gz
-            agent-tab-daemon-darwin-x86_64/agent-tab-daemon-darwin-x86_64.tar.gz
-            agent-tab-daemon-darwin-aarch64/agent-tab-daemon-darwin-aarch64.tar.gz
-            agent-tab-daemon-windows-x86_64/agent-tab-daemon-windows-x86_64.zip
+            browser-linux-x86_64/browser-linux-x86_64.tar.gz
+            browser-linux-aarch64/browser-linux-aarch64.tar.gz
+            browser-darwin-x86_64/browser-darwin-x86_64.tar.gz
+            browser-darwin-aarch64/browser-darwin-aarch64.tar.gz
+            browser-windows-x86_64/browser-windows-x86_64.zip
+            browser-daemon-linux-x86_64/browser-daemon-linux-x86_64.tar.gz
+            browser-daemon-linux-aarch64/browser-daemon-linux-aarch64.tar.gz
+            browser-daemon-darwin-x86_64/browser-daemon-darwin-x86_64.tar.gz
+            browser-daemon-darwin-aarch64/browser-daemon-darwin-aarch64.tar.gz
+            browser-daemon-windows-x86_64/browser-daemon-windows-x86_64.zip
           draft: false
           prerelease: ${{ needs.setup.outputs.is_beta == 'true' }}
           generate_release_notes: true
-          name: "Agent Tab v${{ needs.setup.outputs.version }}"
+          name: "Browser CLI v${{ needs.setup.outputs.version }}"
           tag_name: "v${{ needs.setup.outputs.version }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -219,55 +219,55 @@ jobs:
         run: |
           VERSION_NUM=${VERSION}
           
-          curl -L "https://github.com/stakpak/agent/releases/download/v${VERSION}/agent-tab-darwin-x86_64.tar.gz" -o agent-tab-darwin-x86_64.tar.gz
-          curl -L "https://github.com/stakpak/agent/releases/download/v${VERSION}/agent-tab-darwin-aarch64.tar.gz" -o agent-tab-darwin-aarch64.tar.gz
-          curl -L "https://github.com/stakpak/agent/releases/download/v${VERSION}/agent-tab-linux-x86_64.tar.gz" -o agent-tab-linux-x86_64.tar.gz
-          curl -L "https://github.com/stakpak/agent/releases/download/v${VERSION}/agent-tab-linux-aarch64.tar.gz" -o agent-tab-linux-aarch64.tar.gz
+          curl -L "https://github.com/stakpak/tab/releases/download/v${VERSION}/browser-darwin-x86_64.tar.gz" -o browser-darwin-x86_64.tar.gz
+          curl -L "https://github.com/stakpak/tab/releases/download/v${VERSION}/browser-darwin-aarch64.tar.gz" -o browser-darwin-aarch64.tar.gz
+          curl -L "https://github.com/stakpak/tab/releases/download/v${VERSION}/browser-linux-x86_64.tar.gz" -o browser-linux-x86_64.tar.gz
+          curl -L "https://github.com/stakpak/tab/releases/download/v${VERSION}/browser-linux-aarch64.tar.gz" -o browser-linux-aarch64.tar.gz
 
-          SHA256_DARWIN_X64=$(sha256sum agent-tab-darwin-x86_64.tar.gz | cut -d ' ' -f 1)
-          SHA256_DARWIN_ARM=$(sha256sum agent-tab-darwin-aarch64.tar.gz | cut -d ' ' -f 1)
-          SHA256_LINUX_X64=$(sha256sum agent-tab-linux-x86_64.tar.gz | cut -d ' ' -f 1)
-          SHA256_LINUX_ARM=$(sha256sum agent-tab-linux-aarch64.tar.gz | cut -d ' ' -f 1)
+          SHA256_DARWIN_X64=$(sha256sum browser-darwin-x86_64.tar.gz | cut -d ' ' -f 1)
+          SHA256_DARWIN_ARM=$(sha256sum browser-darwin-aarch64.tar.gz | cut -d ' ' -f 1)
+          SHA256_LINUX_X64=$(sha256sum browser-linux-x86_64.tar.gz | cut -d ' ' -f 1)
+          SHA256_LINUX_ARM=$(sha256sum browser-linux-aarch64.tar.gz | cut -d ' ' -f 1)
 
-          cat > agent-tab.rb << EOF
-          class AgentTab < Formula
-            desc "Browser automation CLI for Stakpak Agent"
-            homepage "https://github.com/stakpak/agent"
+          cat > browser.rb << EOF
+          class Browser < Formula
+            desc "Browser automation CLI"
+            homepage "https://github.com/stakpak/tab"
             version "${VERSION_NUM}"
             license "MIT"
             
             on_macos do
               if Hardware::CPU.arm?
-                url "https://github.com/stakpak/agent/releases/download/v${VERSION}/agent-tab-darwin-aarch64.tar.gz"
+                url "https://github.com/stakpak/tab/releases/download/v${VERSION}/browser-darwin-aarch64.tar.gz"
                 sha256 "${SHA256_DARWIN_ARM}"
               else
-                url "https://github.com/stakpak/agent/releases/download/v${VERSION}/agent-tab-darwin-x86_64.tar.gz"
+                url "https://github.com/stakpak/tab/releases/download/v${VERSION}/browser-darwin-x86_64.tar.gz"
                 sha256 "${SHA256_DARWIN_X64}"
               end
             end
             
             on_linux do
               if Hardware::CPU.arm?
-                url "https://github.com/stakpak/agent/releases/download/v${VERSION}/agent-tab-linux-aarch64.tar.gz"
+                url "https://github.com/stakpak/tab/releases/download/v${VERSION}/browser-linux-aarch64.tar.gz"
                 sha256 "${SHA256_LINUX_ARM}"
               else
-                url "https://github.com/stakpak/agent/releases/download/v${VERSION}/agent-tab-linux-x86_64.tar.gz"
+                url "https://github.com/stakpak/tab/releases/download/v${VERSION}/browser-linux-x86_64.tar.gz"
                 sha256 "${SHA256_LINUX_X64}"
               end
             end
             
             def install
-              bin.install "agent-tab"
+              bin.install "browser"
             end
             
             test do
-              system "#{bin}/agent-tab", "--help"
+              system "#{bin}/browser", "--help"
             end
           end
           EOF
 
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git add agent-tab.rb
-          git commit -m "Update agent-tab to ${VERSION}"
+          git add browser.rb
+          git commit -m "Update browser to ${VERSION}"
           git push

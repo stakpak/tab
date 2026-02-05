@@ -33,7 +33,7 @@ fn main() -> ExitCode {
 pub fn run(cli: Cli) -> Result<()> {
     if matches!(cli.command, Commands::Version) {
         println!(
-            "agent-tab v{} (https://github.com/stakpak/agent)",
+            "browser v{} (https://github.com/stakpak/tab)",
             env!("CARGO_PKG_VERSION")
         );
         return Ok(());

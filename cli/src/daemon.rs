@@ -1,4 +1,4 @@
-//! Daemon management for auto-starting the tab-daemon
+//! Daemon management for auto-starting the browser-daemon
 //!
 //! Provides functionality to:
 //! - Check if daemon is running
@@ -28,7 +28,7 @@ const DAEMON_STARTUP_TIMEOUT_MS: u64 = 10000;
 const DAEMON_POLL_INTERVAL_MS: u64 = 100;
 
 /// Daemon executable name
-const DAEMON_EXECUTABLE: &str = "agent-tab-daemon";
+const DAEMON_EXECUTABLE: &str = "browser-daemon";
 
 // =============================================================================
 // Daemon Manager
@@ -155,7 +155,7 @@ fn find_daemon_executable() -> Result<PathBuf> {
     }
 
     Err(CliError::DaemonNotRunning(format!(
-        "'{}' executable not found. Ensure it is in the same directory as 'tab' or in your PATH.",
+        "'{}' executable not found. Ensure it is in the same directory as 'browser' or in your PATH.",
         DAEMON_EXECUTABLE
     )))
 }

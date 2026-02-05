@@ -12,7 +12,7 @@ import type { ChildProcess } from "node:child_process";
 
 const SHUTDOWN_TIMEOUT = 10000;
 
-export class TabDaemon {
+export class BrowserDaemon {
 
     private config: DaemonConfig;
     private ipcServer: IpcServer;
@@ -59,7 +59,7 @@ export class TabDaemon {
         setupSignalHandlers(this);
 
         this.isRunning = true;
-        console.log("tab-daemon started successfully");
+        console.log("browser-daemon started successfully");
     }
 
     async stop(): Promise<void> {
@@ -77,7 +77,7 @@ export class TabDaemon {
     }
 
     private async performShutdown(): Promise<void> {
-        console.log("Stopping tab-daemon...");
+        console.log("Stopping browser-daemon...");
 
         this.isRunning = false;
 
@@ -101,7 +101,7 @@ export class TabDaemon {
         console.log("Stopping WebSocket server...");
         await this.wsServer.stop();
 
-        console.log("tab-daemon stopped");
+        console.log("browser-daemon stopped");
     }
 
     private async waitForCommandsWithTimeout(timeout: number): Promise<void> {

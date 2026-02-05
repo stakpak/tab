@@ -107,9 +107,14 @@ update_version() {
     "
     print_success "Updated daemon package.json version to $new_version"
     
+    # Update daemon package-lock.json
+    print_info "Updating daemon package-lock.json..."
+    (cd daemon && npm install --package-lock-only 2>/dev/null || true)
+    print_success "Updated daemon package-lock.json"
+    
     # Update CLI Cargo.lock
     print_info "Updating CLI Cargo.lock..."
-    (cd cli && cargo update --package agent-tab)
+    (cd cli && cargo update --package browser)
     print_success "Updated CLI Cargo.lock"
 }
 

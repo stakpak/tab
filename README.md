@@ -1,36 +1,36 @@
-# Tab CLI - Browser Automation for AI Agents
+# Browser CLI - Browser Automation for AI Agents
 
-A command-line interface for controlling a real browser through the StakTab extension. Navigate websites, interact with elements, take snapshots, manage tabs, and execute JavaScript—all from your terminal.
+A command-line interface for controlling a real browser through the Browser extension. Navigate websites, interact with elements, take snapshots, manage tabs, and execute JavaScript—all from your terminal.
 
-> **Note:** The StakPak extension must be installed in the browser profile for Tab CLI to control the browser.
+> **Note:** The Browser extension must be installed in the browser profile for Browser CLI to control the browser.
 
 ## Quick Start
 
 ```bash
 # Navigate to a website
-tab navigate example.com
+browser navigate example.com
 
 # Create a new tab with a URL
-tab tab new google.com
+browser tab new google.com
 
 # Get accessibility tree with element refs
-tab snapshot
+browser snapshot
 
 # Click an element using its ref from snapshot
-tab click @e2
+browser click @e2
 
 # Type text into a form field
-tab type @e3 "test@example.com"
+browser type @e3 "test@example.com"
 
 # Close the current tab
-tab tab close
+browser tab close
 ```
 
 ## Global Options
 
 These options are available for all commands:
 
-- `-s, --session <SESSION>` - Session name to use (overrides `TAB_SESSION` env var)
+- `-s, --session <SESSION>` - Session name to use (overrides `BROWSER_SESSION` env var)
 - `--profile <PROFILE>` - Browser profile directory to use (default: system default profile)
 - `-o, --output <OUTPUT>` - Output format: `human`, `json`, `quiet` [default: human]
 
@@ -43,7 +43,7 @@ Navigate the active tab to a URL.
 
 **Usage:**
 ```bash
-tab navigate [OPTIONS] <URL>
+browser navigate [OPTIONS] <URL>
 ```
 
 **Arguments:**
@@ -51,9 +51,9 @@ tab navigate [OPTIONS] <URL>
 
 **Example:**
 ```bash
-tab navigate https://example.com
-tab navigate example.com
-tab navigate -o json example.com
+browser navigate https://example.com
+browser navigate example.com
+browser navigate -o json example.com
 ```
 
 ---
@@ -63,13 +63,13 @@ Take a snapshot of the current page, returning the accessibility tree with eleme
 
 **Usage:**
 ```bash
-tab snapshot [OPTIONS]
+browser snapshot [OPTIONS]
 ```
 
 **Example:**
 ```bash
-tab snapshot
-tab snapshot -o json
+browser snapshot
+browser snapshot -o json
 ```
 
 ---
@@ -81,7 +81,7 @@ Click on an element using its reference from a snapshot.
 
 **Usage:**
 ```bash
-tab click [OPTIONS] <REF>
+browser click [OPTIONS] <REF>
 ```
 
 **Arguments:**
@@ -89,8 +89,8 @@ tab click [OPTIONS] <REF>
 
 **Example:**
 ```bash
-tab click @e2
-tab click -s mysession @submit-btn
+browser click @e2
+browser click -s mysession @submit-btn
 ```
 
 ---
@@ -100,7 +100,7 @@ Type text into an input element.
 
 **Usage:**
 ```bash
-tab type [OPTIONS] <REF> <TEXT>
+browser type [OPTIONS] <REF> <TEXT>
 ```
 
 **Arguments:**
@@ -109,8 +109,8 @@ tab type [OPTIONS] <REF> <TEXT>
 
 **Example:**
 ```bash
-tab type @e3 "test@example.com"
-tab type @password "mysecretpassword"
+browser type @e3 "test@example.com"
+browser type @password "mysecretpassword"
 ```
 
 ---
@@ -120,7 +120,7 @@ Scroll the page or an element.
 
 **Usage:**
 ```bash
-tab scroll [OPTIONS] <DIRECTION>
+browser scroll [OPTIONS] <DIRECTION>
 ```
 
 **Arguments:**
@@ -132,9 +132,9 @@ tab scroll [OPTIONS] <DIRECTION>
 
 **Example:**
 ```bash
-tab scroll down
-tab scroll down -a 500
-tab scroll right -r @e5 -a 200
+browser scroll down
+browser scroll down -a 500
+browser scroll right -r @e5 -a 200
 ```
 
 ---
@@ -146,7 +146,7 @@ Create a new tab, optionally with a starting URL.
 
 **Usage:**
 ```bash
-tab tab new [OPTIONS] [URL]
+browser tab new [OPTIONS] [URL]
 ```
 
 **Arguments:**
@@ -154,8 +154,8 @@ tab tab new [OPTIONS] [URL]
 
 **Example:**
 ```bash
-tab tab new
-tab tab new https://google.com
+browser tab new
+browser tab new https://google.com
 ```
 
 ---
@@ -165,12 +165,12 @@ Close the active tab.
 
 **Usage:**
 ```bash
-tab tab close [OPTIONS]
+browser tab close [OPTIONS]
 ```
 
 **Example:**
 ```bash
-tab tab close
+browser tab close
 ```
 
 ---
@@ -180,7 +180,7 @@ Switch to a tab by its ID.
 
 **Usage:**
 ```bash
-tab tab switch [OPTIONS] <TAB_ID>
+browser tab switch [OPTIONS] <TAB_ID>
 ```
 
 **Arguments:**
@@ -188,8 +188,8 @@ tab tab switch [OPTIONS] <TAB_ID>
 
 **Example:**
 ```bash
-tab tab switch 3
-tab tab switch 7
+browser tab switch 3
+browser tab switch 7
 ```
 
 ---
@@ -199,13 +199,13 @@ List all open tabs with their IDs.
 
 **Usage:**
 ```bash
-tab tab list [OPTIONS]
+browser tab list [OPTIONS]
 ```
 
 **Example:**
 ```bash
-tab tab list
-tab tab list -o json
+browser tab list
+browser tab list -o json
 ```
 
 ---
@@ -217,12 +217,12 @@ Go back in browser history.
 
 **Usage:**
 ```bash
-tab back [OPTIONS]
+browser back [OPTIONS]
 ```
 
 **Example:**
 ```bash
-tab back
+browser back
 ```
 
 ---
@@ -232,12 +232,12 @@ Go forward in browser history.
 
 **Usage:**
 ```bash
-tab forward [OPTIONS]
+browser forward [OPTIONS]
 ```
 
 **Example:**
 ```bash
-tab forward
+browser forward
 ```
 ---
 
@@ -248,55 +248,55 @@ Check if the browser daemon is running.
 
 **Usage:**
 ```bash
-tab ping [OPTIONS]
+browser ping [OPTIONS]
 ```
 
 **Example:**
 ```bash
-tab ping
+browser ping
 ```
 
 ---
 
 ## Workflow Example
 
-Here's a complete example of using Tab CLI to interact with a website:
+Here's a complete example of using Browser CLI to interact with a website:
 
 ```bash
 # 1. Navigate to a website
-tab navigate https://example.com
+browser navigate https://example.com
 
 # 2. Take a snapshot to see available elements
-tab snapshot
+browser snapshot
 # Output: Shows accessibility tree with refs like @e1, @e2, etc.
 
 # 3. Click a button (assuming @e2 is the button)
-tab click @e2
+browser click @e2
 
 # 4. Fill out a form
-tab type @e3 "myemail@example.com"
-tab type @e4 "password123"
+browser type @e3 "myemail@example.com"
+browser type @e4 "password123"
 
 # 5. Submit the form by clicking the submit button
-tab click @e5
+browser click @e5
 
 # 6. Take another snapshot to see the result
-tab snapshot
+browser snapshot
 
 # 7. Navigate back if needed
-tab back
+browser back
 
 # 8. Open a new tab for parallel work
-tab tab new https://google.com
+browser tab new https://google.com
 
 # 9. List all tabs
-tab tab list
+browser tab list
 
 # 10. Switch back to first tab
-tab tab switch 1
+browser tab switch 1
 
 # 11. Close the current tab when done
-tab tab close
+browser tab close
 ```
 
 ## Output Formats
@@ -309,21 +309,21 @@ The CLI supports three output formats:
 
 Use `-o, --output` flag to specify format:
 ```bash
-tab snapshot -o json
-tab navigate example.com -o quiet
+browser snapshot -o json
+browser navigate example.com -o quiet
 ```
 
 ## Environment Variables
 
-- `TAB_SESSION` - Default session name to use
+- `BROWSER_SESSION` - Default session name to use
 
 ## Session Management
 
 Sessions allow multiple independent browser windows belonging to the same instance. Use `-s` or `--session` flag to specify:
 
 ```bash
-tab -s work navigate https://work.example.com
-tab -s personal navigate https://personal.example.com
+browser -s work navigate https://work.example.com
+browser -s personal navigate https://personal.example.com
 ```
 
 Each session has its own browser context, cookies, and state.
@@ -333,7 +333,7 @@ Each session has its own browser context, cookies, and state.
 Use `--profile` to specify a custom browser profile directory:
 
 ```bash
-tab --profile /path/to/custom/profile navigate example.com
+browser --profile /path/to/custom/profile navigate example.com
 ```
 
 This allows using existing browser profiles with saved cookies, bookmarks, etc.
@@ -343,10 +343,10 @@ This allows using existing browser profiles with saved cookies, bookmarks, etc.
 Get help for any command:
 
 ```bash
-tab --help
-tab navigate --help
-tab tab --help
-tab tab new --help
+browser --help
+browser navigate --help
+browser tab --help
+browser tab new --help
 ```
 
 ## License
