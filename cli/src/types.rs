@@ -155,31 +155,27 @@ impl FromStr for ScrollDirection {
 // Response Data Types
 // =============================================================================
 
-/// Reference information for a DOM element
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RefInfo {
-    pub r#ref: String,
-    pub tag: String,
-    pub text: Option<String>,
-}
-
 /// Data returned from tab list command
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TabListData {
     pub tabs: Vec<TabInfo>,
-    pub active_tab_id: i32,
+    pub active_tab_id: i64,
 }
 
 /// Information about a browser tab
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TabInfo {
-    pub id: i32,
+    pub id: i64,
     pub url: String,
     pub title: String,
+    #[serde(default)]
+    pub active: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SnapshotData {
-    pub html: String,
-    pub refs: Vec<RefInfo>,
+    pub snapshot: String,
+    pub title: String,
+    pub url: String,
 }
