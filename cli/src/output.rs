@@ -131,7 +131,10 @@ pub fn format_tab_list(data: &TabListData) -> String {
 
     for tab in &data.tabs {
         let marker = if tab.active { "* " } else { "  " };
-        output.push_str(&format!("{}[{}] {} {} \n", marker, tab.id, tab.title, tab.url));
+        output.push_str(&format!(
+            "{}[{}] {} {} \n",
+            marker, tab.id, tab.title, tab.url
+        ));
     }
 
     output
