@@ -9,6 +9,7 @@ pub mod click;
 pub mod eval;
 pub mod history;
 pub mod navigate;
+pub mod plugins;
 pub mod scroll;
 pub mod snapshot;
 pub mod tab;

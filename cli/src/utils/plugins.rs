@@ -1,0 +1,394 @@
+use crate::utils::files::{extract_tar_gz, extract_zip, get_home_dir, is_executable};
+use crate::utils::tls_client::{TlsClientConfig, create_tls_client};
+use std::fs;
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
+
+/// Configuration for a plugin download
+pub struct PluginConfig {
+    pub name: String,
+    pub base_url: String,
+    pub targets: Vec<String>,
+    pub version: Option<String>,
+    pub repo: Option<String>,
+    pub owner: Option<String>,
+    pub version_arg: Option<String>,
+}
+
+/// Get the path to a plugin, downloading it if necessary
+pub async fn get_plugin_path(config: PluginConfig) -> String {
+    let config = PluginConfig {
+        name: config.name,
+        base_url: config.base_url.trim_end_matches('/').to_string(), // Remove trailing slash
+        targets: config.targets,
+        version: config.version,
+        repo: config.repo,
+        owner: config.owner,
+        version_arg: config.version_arg,
+    };
+
+    // Get the target version from the server or GitHub
+    let target_version = match config.version.clone() {
+        Some(version) => version,
+        None => {
+            let latest = if let (Some(owner), Some(repo)) = (&config.owner, &config.repo) {
+                get_latest_github_release_version(owner, repo).await
+            } else {
+                eprintln!(
+                    "Error: Missing owner or repo for {}. Cannot determine latest version.",
+                    config.name
+                );
+                return config.name.clone();
+            };
+
+            match latest {
+                Ok(version) => version,
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Failed to check latest version for {}: {}",
+                        config.name, e
+                    );
+                    // Continue with existing logic if version check fails
+                    return get_plugin_path_without_version_check(&config).await;
+                }
+            }
+        }
+    };
+
+    // First check if plugin is available in PATH
+    if let Ok(system_version) =
+        get_version_from_command(&config.name, &config.name, config.version_arg.as_deref())
+    {
+        if is_same_version(&system_version, &target_version) {
+            return config.name.clone();
+        } else {
+            println!(
+                "{} {} is outdated (target: {}), checking plugins directory...",
+                config.name, system_version, target_version
+            );
+        }
+    }
+
+    // Check if plugin already exists in plugins directory
+    if let Ok(existing_path) = get_existing_plugin_path(&config.name)
+        && let Ok(current_version) =
+            get_version_from_command(&existing_path, &config.name, config.version_arg.as_deref())
+    {
+        if is_same_version(&current_version, &target_version) {
+            return existing_path;
+        } else {
+            println!(
+                "{} {} is outdated (target: {}), updating...",
+                config.name, current_version, target_version
+            );
+        }
+    }
+
+    // Try to download and install the latest version
+    match download_and_install_plugin(&config).await {
+        Ok(path) => {
+            println!(
+                "Successfully installed {} {} -> {}",
+                config.name, target_version, path
+            );
+            path
+        }
+        Err(e) => {
+            eprintln!("Failed to download {}: {}", config.name, e);
+            // Try to use existing version if available
+            if let Ok(existing_path) = get_existing_plugin_path(&config.name) {
+                eprintln!("Using existing {} version", config.name);
+                existing_path
+            } else if is_plugin_available(&config.name) {
+                eprintln!("Using system PATH version of {}", config.name);
+                config.name.clone()
+            } else {
+                eprintln!("No fallback available for {}", config.name);
+                config.name.clone() // Last resort fallback
+            }
+        }
+    }
+}
+
+/// Get plugin path without version checking (fallback function)
+async fn get_plugin_path_without_version_check(config: &PluginConfig) -> String {
+    // First check if plugin is available in PATH
+    if is_plugin_available(&config.name) {
+        return config.name.clone();
+    }
+
+    // Check if plugin already exists in plugins directory
+    if let Ok(existing_path) = get_existing_plugin_path(&config.name) {
+        return existing_path;
+    }
+
+    // Try to download and install plugin to ~/.stakpak/plugins
+    match download_and_install_plugin(config).await {
+        Ok(path) => path,
+        Err(e) => {
+            eprintln!("Failed to download {}: {}", config.name, e);
+            config.name.clone() // Fallback to system PATH (may not work)
+        }
+    }
+}
+
+/// Get version by running a command (can be plugin name or path)
+fn get_version_from_command(
+    command: &str,
+    display_name: &str,
+    version_arg: Option<&str>,
+) -> Result<String, String> {
+    let arg = version_arg.unwrap_or("version");
+    let output = Command::new(command)
+        .arg(arg)
+        .output()
+        .map_err(|e| format!("Failed to run {} {} command: {}", display_name, arg, e))?;
+
+    if !output.status.success() {
+        return Err(format!("{} {} command failed", display_name, arg));
+    }
+
+    let version_output = String::from_utf8_lossy(&output.stdout);
+    let full_output = version_output.trim();
+
+    if full_output.is_empty() {
+        return Err(format!("Could not determine {} version", display_name));
+    }
+
+    // Extract version from output like "warden v0.1.7 (https://github.com/stakpak/agent)"
+    // Split by whitespace and find the part that looks like a version
+    let version = full_output
+        .split_whitespace()
+        .find(|s| {
+            s.starts_with('v')
+                || s.chars()
+                    .next()
+                    .map(|c| c.is_ascii_digit())
+                    .unwrap_or(false)
+        })
+        .map(|s| s.to_string())
+        .or_else(|| {
+            // Fallback to the second part if none start with 'v' or digit
+            let parts: Vec<&str> = full_output.split_whitespace().collect();
+            if parts.len() >= 2 {
+                Some(parts[1].to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| full_output.to_string());
+
+    Ok(version)
+}
+
+/// Check if a plugin is available in the system PATH
+pub fn is_plugin_available(plugin_name: &str) -> bool {
+    get_version_from_command(plugin_name, plugin_name, None).is_ok()
+}
+
+/// Fetch the latest version from GitHub releases
+pub async fn get_latest_github_release_version(owner: &str, repo: &str) -> Result<String, String> {
+    let client = create_tls_client(TlsClientConfig::default())?;
+    let url = format!("https://api.github.com/repos/{owner}/{repo}/releases/latest");
+
+    let response = client
+        .get(url)
+        .header("User-Agent", "stakpak-cli")
+        .header("Accept", "application/vnd.github.v3+json")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch latest release version: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("GitHub API returned: {}", response.status()));
+    }
+
+    let json: serde_json::Value = response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|e| format!("Failed to parse GitHub response: {}", e))?;
+
+    json["tag_name"]
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "No tag_name in release".to_string())
+}
+
+/// Compare two version strings
+pub fn is_same_version(current: &str, latest: &str) -> bool {
+    let current_clean = current.strip_prefix('v').unwrap_or(current);
+    let latest_clean = latest.strip_prefix('v').unwrap_or(latest);
+
+    current_clean == latest_clean
+}
+
+/// Check if plugin binary already exists in plugins directory
+pub fn get_existing_plugin_path(plugin_name: &str) -> Result<String, String> {
+    let plugins_dir = get_plugins_dir()?;
+
+    // Determine the expected binary name based on OS
+    let binary_name = if cfg!(windows) {
+        format!("{}.exe", plugin_name)
+    } else {
+        plugin_name.to_string()
+    };
+
+    let plugin_path = plugins_dir.join(&binary_name);
+
+    if plugin_path.exists() && is_executable(&plugin_path) {
+        Ok(plugin_path.to_string_lossy().to_string())
+    } else {
+        Err(format!(
+            "{} binary not found in plugins directory",
+            plugin_name
+        ))
+    }
+}
+
+/// Download and install plugin binary to ~/.stakpak/plugins
+pub async fn download_and_install_plugin(config: &PluginConfig) -> Result<String, String> {
+    let plugins_dir = get_plugins_dir()?;
+
+    // Create directories if they don't exist
+    fs::create_dir_all(&plugins_dir)
+        .map_err(|e| format!("Failed to create plugins directory: {}", e))?;
+
+    // Determine the appropriate download URL based on OS and architecture
+    let (download_url, binary_name, is_zip) = get_download_info(config)?;
+
+    let plugin_path = plugins_dir.join(&binary_name);
+
+    println!("Downloading {} plugin...", config.name);
+
+    // Download the archive
+    let client = create_tls_client(TlsClientConfig::default())?;
+    let response = client
+        .get(&download_url)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to download {}: {}", config.name, e))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "Failed to download {}: HTTP {}",
+            config.name,
+            response.status()
+        ));
+    }
+
+    let archive_bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read download response: {}", e))?;
+
+    // Extract the archive
+    if is_zip {
+        extract_zip(&archive_bytes, &plugins_dir)?;
+    } else {
+        extract_tar_gz(&archive_bytes, &plugins_dir)?;
+    }
+
+    // Make the binary executable on Unix systems
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = fs::metadata(&plugin_path)
+            .map_err(|e| format!("Failed to get file metadata: {}", e))?
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&plugin_path, permissions)
+            .map_err(|e| format!("Failed to set executable permissions: {}", e))?;
+    }
+
+    Ok(plugin_path.to_string_lossy().to_string())
+}
+
+/// Determine download URL and binary name based on OS and architecture
+pub fn get_download_info(config: &PluginConfig) -> Result<(String, String, bool), String> {
+    let (platform, arch) = get_platform_suffix()?; // linux x86_64
+
+    // Determine the current platform target
+    let current_target = format!("{}-{}", platform, arch); // linux-x86_64
+
+    // Check if this target is supported by the plugin
+    if !config.targets.contains(&current_target.to_string()) {
+        return Err(format!(
+            "Plugin {} does not support target: {}",
+            config.name, current_target
+        ));
+    }
+
+    // Determine binary name and archive type
+    let (binary_name, is_zip) = if current_target.starts_with("windows") {
+        (format!("{}.exe", config.name), true)
+    } else {
+        (config.name.clone(), false)
+    };
+
+    let extension = if is_zip { "zip" } else { "tar.gz" };
+
+    let download_url = if config.base_url.contains("github.com") {
+        match &config.version {
+            Some(version) => format!(
+                "{}/releases/download/{}/{}-{}.{}",
+                config.base_url, version, config.name, current_target, extension
+            ),
+            None => format!(
+                "{}/releases/latest/download/{}-{}.{}",
+                config.base_url, config.name, current_target, extension
+            ),
+        }
+    } else {
+        format!(
+            "{}/{}/{}-{}.{}",
+            config.base_url,
+            config.version.clone().unwrap_or("latest".to_string()),
+            config.name,
+            current_target,
+            extension
+        )
+    };
+
+    Ok((download_url, binary_name, is_zip))
+}
+
+pub fn get_plugins_dir() -> Result<PathBuf, String> {
+    let home_dir = get_home_dir()?;
+    Ok(PathBuf::from(&home_dir).join(".stakpak").join("plugins"))
+}
+
+pub fn get_platform_suffix() -> Result<(&'static str, &'static str), String> {
+    let platform = match std::env::consts::OS {
+        "linux" => "linux",
+        "macos" => "darwin",
+        "windows" => "windows",
+        os => return Err(format!("Unsupported OS: {}", os)),
+    };
+
+    let arch = match std::env::consts::ARCH {
+        "x86_64" => "x86_64",
+        "aarch64" => "aarch64",
+        arch => return Err(format!("Unsupported architecture: {}", arch)),
+    };
+
+    Ok((platform, arch))
+}
+
+pub fn execute_plugin_command(mut cmd: Command, plugin_name: String) -> Result<(), String> {
+    cmd.stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .stdin(Stdio::inherit());
+
+    let status = cmd
+        .status()
+        .map_err(|e| format!("Failed to execute {} command: {}", plugin_name, e))?;
+
+    if !status.success() {
+        return Err(format!(
+            "{} command failed with status: {}",
+            plugin_name, status
+        ));
+    }
+
+    std::process::exit(status.code().unwrap_or(1));
+}

@@ -126,31 +126,44 @@ mod tests {
     fn from_env_loads_socket_path_from_environment() {
         let _lock = ENV_MUTEX.lock().unwrap();
         let test_path = "/tmp/test-socket.sock";
-        env::set_var(ENV_IPC_SOCKET_PATH, test_path);
+
+        unsafe {
+            env::set_var(ENV_IPC_SOCKET_PATH, test_path);
+        }
 
         let config = Config::from_env();
         assert_eq!(config.ipc_socket_path, PathBuf::from(test_path));
 
-        env::remove_var(ENV_IPC_SOCKET_PATH);
+        unsafe {
+            env::remove_var(ENV_IPC_SOCKET_PATH);
+        }
     }
 
     #[test]
     fn from_env_loads_session_name_from_environment() {
         let _lock = ENV_MUTEX.lock().unwrap();
         let test_session = "test-session";
-        env::set_var(ENV_SESSION_NAME, test_session);
+
+        unsafe {
+            env::set_var(ENV_SESSION_NAME, test_session);
+        }
 
         let config = Config::from_env();
         assert_eq!(config.default_session, test_session);
 
-        env::remove_var(ENV_SESSION_NAME);
+        unsafe {
+            env::remove_var(ENV_SESSION_NAME);
+        }
     }
 
     #[test]
     fn from_env_uses_defaults_when_env_vars_not_set() {
         let _lock = ENV_MUTEX.lock().unwrap();
-        env::remove_var(ENV_IPC_SOCKET_PATH);
-        env::remove_var(ENV_SESSION_NAME);
+
+        unsafe {
+            env::remove_var(ENV_IPC_SOCKET_PATH);
+            env::remove_var(ENV_SESSION_NAME);
+        }
 
         let config = Config::from_env();
         assert_eq!(
@@ -164,18 +177,26 @@ mod tests {
     fn get_socket_path_returns_env_var_when_set() {
         let _lock = ENV_MUTEX.lock().unwrap();
         let test_path = "/tmp/override-socket.sock";
-        env::set_var(ENV_IPC_SOCKET_PATH, test_path);
+
+        unsafe {
+            env::set_var(ENV_IPC_SOCKET_PATH, test_path);
+        }
 
         let config = Config::default();
         assert_eq!(config.get_socket_path(), PathBuf::from(test_path));
 
-        env::remove_var(ENV_IPC_SOCKET_PATH);
+        unsafe {
+            env::remove_var(ENV_IPC_SOCKET_PATH);
+        }
     }
 
     #[test]
     fn get_socket_path_returns_config_value_when_env_not_set() {
         let _lock = ENV_MUTEX.lock().unwrap();
-        env::remove_var(ENV_IPC_SOCKET_PATH);
+
+        unsafe {
+            env::remove_var(ENV_IPC_SOCKET_PATH);
+        }
 
         let config = Config {
             ipc_socket_path: PathBuf::from("/custom/path.sock"),
@@ -187,8 +208,11 @@ mod tests {
     #[test]
     fn load_config_returns_env_based_config() {
         let _lock = ENV_MUTEX.lock().unwrap();
-        env::remove_var(ENV_IPC_SOCKET_PATH);
-        env::remove_var(ENV_SESSION_NAME);
+
+        unsafe {
+            env::remove_var(ENV_IPC_SOCKET_PATH);
+            env::remove_var(ENV_SESSION_NAME);
+        }
 
         let config = load_config();
         assert_eq!(

@@ -112,6 +112,18 @@ pub enum Commands {
         long_about = "Show version information.\n\nUSAGE:\n  browser version"
     )]
     Version,
+
+    /// Start Deamon
+    #[command(
+        disable_help_flag = true,
+        about = "Start the browser daemon",
+        long_about = "Start the browser daemon."
+    )]
+    Daemon {
+        /// Arguments to pass to the daemon
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]

@@ -6,10 +6,12 @@ pub mod error;
 pub mod ipc;
 pub mod output;
 pub mod types;
+pub mod utils;
 
 use clap::Parser;
 use cli::{Cli, Commands, TabCommands};
 use commands::Execute;
+use commands::plugins::daemon as daemon_plugin;
 use config::{Config, ENV_PROFILE, ENV_SESSION_NAME};
 use error::{CliError, Result};
 use ipc::IpcClient;
@@ -18,10 +20,11 @@ use std::process::ExitCode;
 use std::str::FromStr;
 use types::ScrollDirection;
 
-fn main() -> ExitCode {
+#[tokio::main]
+async fn main() -> ExitCode {
     let cli = Cli::parse();
 
-    match run(cli) {
+    match run(cli).await {
         Ok(()) => ExitCode::from(0_u8),
         Err(e) => {
             eprintln!("Error: {}", e);
@@ -30,7 +33,7 @@ fn main() -> ExitCode {
     }
 }
 
-pub fn run(cli: Cli) -> Result<()> {
+pub async fn run(cli: Cli) -> Result<()> {
     if matches!(cli.command, Commands::Version) {
         println!(
             "browser v{} (https://github.com/stakpak/tab)",
@@ -51,6 +54,12 @@ pub fn run(cli: Cli) -> Result<()> {
                 "Daemon is not responding".to_string(),
             ));
         }
+    }
+
+    if let Commands::Daemon { args } = cli.command {
+        return daemon_plugin::run_daemon(args)
+            .await
+            .map_err(CliError::CommandFailed);
     }
 
     let config = config::load_config();
@@ -82,8 +91,7 @@ pub fn run(cli: Cli) -> Result<()> {
         Commands::Back => commands::BackCommand::default().execute(&ctx)?,
         Commands::Forward => commands::ForwardCommand::default().execute(&ctx)?,
         Commands::Eval(args) => commands::EvalCommand::new(args.script).execute(&ctx)?,
-        Commands::Ping => unreachable!(),
-        Commands::Version => unreachable!(),
+        Commands::Ping | Commands::Version | Commands::Daemon { .. } => unreachable!(),
     };
 
     let formatter = OutputFormatter::new(cli.output);
