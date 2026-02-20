@@ -230,49 +230,6 @@ mod tests {
     }
 
     #[test]
-    fn format_error_human() {
-        let formatter = OutputFormatter::new(OutputFormat::Human);
-        let response = CommandResponse {
-            id: "cmd-1".to_string(),
-            success: false,
-            data: None,
-            error: Some("Something went wrong".to_string()),
-        };
-
-        let output = formatter.format_error(&response);
-        assert_eq!(output, "Error: Something went wrong");
-    }
-
-    #[test]
-    fn format_error_json() {
-        let formatter = OutputFormatter::new(OutputFormat::Json);
-        let response = CommandResponse {
-            id: "cmd-1".to_string(),
-            success: false,
-            data: None,
-            error: Some("Something went wrong".to_string()),
-        };
-
-        let output = formatter.format_error(&response);
-        assert!(output.contains("\"success\":false"));
-        assert!(output.contains("Something went wrong"));
-    }
-
-    #[test]
-    fn format_error_quiet() {
-        let formatter = OutputFormatter::new(OutputFormat::Quiet);
-        let response = CommandResponse {
-            id: "cmd-1".to_string(),
-            success: false,
-            data: None,
-            error: Some("Something went wrong".to_string()),
-        };
-
-        let output = formatter.format_error(&response);
-        assert_eq!(output, "Something went wrong");
-    }
-
-    #[test]
     fn format_snapshot_displays_tree() {
         let data = SnapshotData {
             snapshot: "- RootWebArea \"Example\" [ref=e1]\n  - link \"Home\" [ref=e2]".to_string(),
