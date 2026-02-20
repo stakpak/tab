@@ -9,7 +9,7 @@
 
 export type ActionType =
   | 'snapshot' | 'click' | 'dblclick' | 'fill' | 'type' | 'press' | 'hover' | 'focus' | 'check' | 'uncheck' | 'select' | 'get' | 'is'
-  | 'drag' | 'upload' | 'scroll' | 'scrollintoview' | 'wait' | 'find' | 'mouse';
+  | 'drag' | 'scroll' | 'scrollintoview' | 'wait' | 'find' | 'mouse';
 
 export interface ContentRequest {
   action: ActionType;

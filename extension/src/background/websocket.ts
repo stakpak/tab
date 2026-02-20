@@ -369,7 +369,7 @@ function validateCommand(obj: unknown): AgentCommand | null {
 
   if (typeof cmd.type !== 'string' || ![
     'snapshot', 'click', 'dblclick', 'fill', 'type', 'press', 'hover', 'focus', 'check', 'uncheck', 'select', 'tab', 'open', 'get', 'is',
-    'drag', 'upload', 'scroll', 'scrollintoview', 'wait', 'screenshot', 'pdf', 'eval', 'close', 'back', 'forward', 'reload', 'find', 'mouse'
+    'drag', 'scroll', 'scrollintoview', 'wait', 'screenshot', 'close', 'back', 'forward', 'reload', 'find', 'mouse'
   ].includes(cmd.type)) {
     return null;
   }

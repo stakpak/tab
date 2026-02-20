@@ -37,7 +37,6 @@ export async function executeAction(request: ContentRequest): Promise<ContentRes
         const timeout = (request.params?.timeout as number | undefined) || 5000;
         const result = await generateSnapshot(timeout);
         currentRegistry = result.refRegistry;
-        // Expose registry for background script (e.g. for upload)
         (window as any).__REF_REGISTRY__ = currentRegistry;
         return {
           success: true,
@@ -287,10 +286,6 @@ export async function executeAction(request: ContentRequest): Promise<ContentRes
           dy: request.params?.dy
         });
         return { success: true, data: { executed: true } };
-      }
-
-      case 'upload': {
-        return { success: false, error: `Action "${request.action}" not yet implemented` };
       }
 
       default: {

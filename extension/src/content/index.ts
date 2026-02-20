@@ -17,7 +17,7 @@ function isValidContentRequest(message: unknown): message is ContentRequest {
   const msg = message as Record<string, unknown>;
   const validActions = [
     'snapshot', 'click', 'dblclick', 'fill', 'type', 'press', 'hover', 'focus', 'check', 'uncheck', 'select', 'get', 'is',
-    'drag', 'upload', 'scroll', 'scrollintoview', 'wait', 'eval', 'find', 'mouse'
+    'drag', 'scroll', 'scrollintoview', 'wait', 'find', 'mouse'
   ];
 
   if (typeof msg.action !== 'string' || !validActions.includes(msg.action)) {
@@ -121,7 +121,7 @@ function isValidContentRequest(message: unknown): message is ContentRequest {
   }
 
   // Placeholder validation for other actions
-  if (['drag', 'upload', 'find', 'mouse'].includes(msg.action)) {
+  if (['drag', 'find', 'mouse'].includes(msg.action)) {
     return true;
   }
 

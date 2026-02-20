@@ -16,7 +16,7 @@
 export type CommandType =
   | 'snapshot' | 'click' | 'dblclick' | 'fill' | 'type' | 'press' | 'hover' | 'focus' | 'check' | 'uncheck' | 'select'
   | 'tab' | 'open' | 'get' | 'is'
-  | 'drag' | 'upload' | 'scroll' | 'scrollintoview' | 'wait' | 'screenshot' | 'pdf' | 'eval' | 'close'
+  | 'drag' | 'scroll' | 'scrollintoview' | 'wait' | 'screenshot' | 'close'
   | 'back' | 'forward' | 'reload' | 'find' | 'mouse';
 
 export interface SnapshotParams {
@@ -105,14 +105,6 @@ export interface ScreenshotParams {
   path?: string;
 }
 
-export interface PdfParams {
-  path: string;
-}
-
-export interface EvalParams {
-  script: string;
-}
-
 export interface FindParams {
   locator: 'role' | 'text' | 'label' | 'placeholder' | 'alt' | 'title' | 'testid' | 'first' | 'last' | 'nth';
   value: string;
@@ -155,8 +147,6 @@ export type CommandParams =
   | ScrollParams
   | WaitParams
   | ScreenshotParams
-  | PdfParams
-  | EvalParams
   | FindParams
   | MouseParams;
 
@@ -187,7 +177,6 @@ export interface ResponseData {
   tabs?: TabInfo[];
   activeTabId?: number;
   screenshot?: string;
-  pdf?: string;
   url?: string;
   title?: string;
 }

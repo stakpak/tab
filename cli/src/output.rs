@@ -23,13 +23,12 @@ impl OutputFormatter {
 
     /// Format and print a command response
     pub fn print_response(&self, response: &CommandResponse) -> Result<()> {
-        
         if response.success {
             let output = self.format_success(response);
             if !output.is_empty() {
                 print_success(&output);
             }
-        } 
+        }
 
         Ok(())
     }

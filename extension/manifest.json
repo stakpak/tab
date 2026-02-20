@@ -1,13 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Staktab",
-  "version": "0.1.0",
-  "description": "Browser extension for LLM-controlled web interaction",
+  "version": "0.1.1",
+  "description": "Control your browser with AI agents via CLI. Works with your default profile. Auditable, collaborative, context-efficient.",
   "permissions": [
-    "activeTab",
     "scripting",
     "tabs",
-    "debugger",
     "storage"
   ],
   "host_permissions": [
