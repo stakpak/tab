@@ -5,6 +5,7 @@
  * Commands are forwarded to extensions in arrival order.
  */
 
+import { spawn } from "node:child_process";
 import type {
   Command,
   CommandId,
@@ -22,7 +23,19 @@ import type { BrowserManager } from "./browser-manager.js";
 
 
 const DEFAULT_COMMAND_TIMEOUT = 30000;
-const DEFAULT_BROWSER_LAUNCH_TIMEOUT = 30000;
+const DEFAULT_BROWSER_LAUNCH_TIMEOUT = 5000;
+const EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/staktab/hfmedpedlflobjkcfimamamlekbnpknn?hl=en";
+
+function openUrl(url: string): void {
+  const platform = process.platform;
+  if (platform === "darwin") {
+    spawn("open", [url]);
+  } else if (platform === "win32") {
+    spawn("cmd", ["/c", "start", url]);
+  } else {
+    spawn("xdg-open", [url]);
+  }
+}
 
 import { validateCommand } from "./validation.js";
 
@@ -157,10 +170,11 @@ export class CommandRouter {
       try {
         await this.waitForExtensionConnection(sessionId, DEFAULT_BROWSER_LAUNCH_TIMEOUT);
       } catch (err) {
+        openUrl(EXTENSION_STORE_URL);
         return {
           id: command.id,
           success: false,
-          error: err instanceof Error ? err.message : "Failed to connect to extension",
+          error: "Extension did not connect in time. Opening extension store to install StakTab...",
         };
       }
     } else {
@@ -190,10 +204,11 @@ export class CommandRouter {
         // Kill browser on timeout
         await this.browserManager.killBrowser(sessionId);
         this.sessionManager.updateSessionState(sessionId, "disconnected");
+        openUrl(EXTENSION_STORE_URL);
         return {
           id: command.id,
           success: false,
-          error: err instanceof Error ? err.message : "Extension did not connect in time",
+          error: "Extension did not connect in time. Opening extension store to install StakTab...",
         };
       }
     }

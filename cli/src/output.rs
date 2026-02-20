@@ -23,15 +23,14 @@ impl OutputFormatter {
 
     /// Format and print a command response
     pub fn print_response(&self, response: &CommandResponse) -> Result<()> {
+        
         if response.success {
             let output = self.format_success(response);
             if !output.is_empty() {
                 print_success(&output);
             }
-        } else {
-            let output = self.format_error(response);
-            print_error(&output);
-        }
+        } 
+
         Ok(())
     }
 
@@ -47,16 +46,6 @@ impl OutputFormatter {
                 }
             }
             OutputFormat::Quiet => String::new(),
-        }
-    }
-
-    /// Format an error response
-    fn format_error(&self, response: &CommandResponse) -> String {
-        let error_msg = response.error.as_deref().unwrap_or("Unknown error");
-        match self.format {
-            OutputFormat::Human => format!("Error: {}", error_msg),
-            OutputFormat::Json => serde_json::to_string(response).unwrap_or_default(),
-            OutputFormat::Quiet => error_msg.to_string(),
         }
     }
 }
