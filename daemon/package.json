@@ -1,6 +1,6 @@
 {
   "name": "browser-daemon",
-  "version": "0.2.1",
+  "version": "0.2.0",
   "description": "Browser automation daemon - WebSocket and IPC server for controlling browsers",
   "type": "module",
   "main": "dist/index.js",
