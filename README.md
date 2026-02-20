@@ -17,10 +17,10 @@ browser tab new google.com
 browser snapshot
 
 # Click an element using its ref from snapshot
-browser click @e2
+browser click e2
 
 # Type text into a form field
-browser type @e3 "test@example.com"
+browser type e3 "test@example.com"
 
 # Close the current tab
 browser tab close
@@ -85,11 +85,11 @@ browser click [OPTIONS] <REF>
 ```
 
 **Arguments:**
-- `REF` - Element ref to click (from snapshot, e.g., `@e2`)
+- `REF` - Element ref to click (from snapshot, e.g., `e2`)
 
 **Example:**
 ```bash
-browser click @e2
+browser click e2
 browser click -s mysession @submit-btn
 ```
 
@@ -109,8 +109,7 @@ browser type [OPTIONS] <REF> <TEXT>
 
 **Example:**
 ```bash
-browser type @e3 "test@example.com"
-browser type @password "mysecretpassword"
+browser type e3 "test@example.com"
 ```
 
 ---
@@ -134,7 +133,7 @@ browser scroll [OPTIONS] <DIRECTION>
 ```bash
 browser scroll down
 browser scroll down -a 500
-browser scroll right -r @e5 -a 200
+browser scroll right -r e5 -a 200
 ```
 
 ---
@@ -268,17 +267,17 @@ browser navigate https://example.com
 
 # 2. Take a snapshot to see available elements
 browser snapshot
-# Output: Shows accessibility tree with refs like @e1, @e2, etc.
+# Output: Shows accessibility tree with refs like e1, e2, etc.
 
-# 3. Click a button (assuming @e2 is the button)
-browser click @e2
+# 3. Click a button (assuming e2 is the button)
+browser click e2
 
 # 4. Fill out a form
-browser type @e3 "myemail@example.com"
-browser type @e4 "password123"
+browser type e3 "myemail@example.com"
+browser type e4 "password123"
 
 # 5. Submit the form by clicking the submit button
-browser click @e5
+browser click e5
 
 # 6. Take another snapshot to see the result
 browser snapshot
@@ -348,11 +347,3 @@ browser navigate --help
 browser tab --help
 browser tab new --help
 ```
-
-## License
-
-[Your License Here]
-
-## Contributing
-
-Contributions welcome! Please see the repository for contribution guidelines.
