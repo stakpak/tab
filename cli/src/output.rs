@@ -88,12 +88,11 @@ fn format_human_success(data: &Option<serde_json::Value>) -> String {
 
     // Generic: if it's just { "executed": true } or similar simple object, show "Success"
     if let Some(obj) = data.as_object() {
-        if obj.len() == 1 {
-            if let Some(val) = obj.get("executed") {
-                if val.as_bool() == Some(true) {
-                    return "Success".to_string();
-                }
-            }
+        if obj.len() == 1
+            && let Some(val) = obj.get("executed")
+            && val.as_bool() == Some(true)
+        {
+            return "Success".to_string();
         }
 
         // Otherwise display as key-value pairs

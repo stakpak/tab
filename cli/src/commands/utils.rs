@@ -1,7 +1,7 @@
 use crate::error::CliError;
 use crate::error::Result;
-use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 
 pub fn validate_ref(element_ref: &str) -> Result<()> {
     // Must not be empty
