@@ -90,7 +90,6 @@ pub async fn run(cli: Cli) -> Result<()> {
         },
         Commands::Back => commands::BackCommand::default().execute(&ctx)?,
         Commands::Forward => commands::ForwardCommand::default().execute(&ctx)?,
-        Commands::Eval(args) => commands::EvalCommand::new(args.script).execute(&ctx)?,
         Commands::Ping | Commands::Version | Commands::Daemon { .. } => unreachable!(),
     };
 

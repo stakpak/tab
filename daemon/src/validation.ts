@@ -14,7 +14,7 @@ export const VALID_COMMAND_TYPES: Set<CommandType> = new Set([
     "scroll", "scrollintoview", "get", "is", "find",
     "drag", "upload", "mouse", "wait",
     "tab", "tab_new", "tab_close", "tab_switch", "tab_list",
-    "screenshot", "pdf", "eval"
+    "screenshot", "pdf"
 ]);
 
 /**

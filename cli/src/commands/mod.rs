@@ -6,7 +6,6 @@
 //! - Formatting the response
 
 pub mod click;
-pub mod eval;
 pub mod history;
 pub mod navigate;
 pub mod plugins;
@@ -17,7 +16,6 @@ pub mod type_cmd;
 pub mod utils;
 
 pub use click::ClickCommand;
-pub use eval::EvalCommand;
 pub use history::back::BackCommand;
 pub use history::forward::ForwardCommand;
 pub use navigate::NavigateCommand;

@@ -96,7 +96,6 @@ export type CommandType =
   | "screenshot"
   | "pdf"
   // Script execution
-  | "eval";
 
 /**
  * Command sent from CLI to daemon

@@ -67,8 +67,6 @@ pub enum CommandType {
     // Capture
     Screenshot,
     Pdf,
-    // Script execution
-    Eval,
 }
 
 /// Command sent from CLI to daemon

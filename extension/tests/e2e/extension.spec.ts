@@ -736,7 +736,7 @@ test.describe('Fill Command', () => {
     }
   });
 
-  test('handles navigation and eval commands', async () => {
+  test('handles navigation commands', async () => {
     const mockServer = new MockWebSocketServer({ port: 8093 });
     await mockServer.start();
 
@@ -762,18 +762,6 @@ test.describe('Fill Command', () => {
       const testPage = await context.newPage();
       await testPage.goto(`file://${TEST_PAGE_PATH}`);
       await testPage.bringToFront();
-
-      // Eval
-      const evalResp = await mockServer.sendCommandAndWaitForResponse({
-        id: 'eval-1',
-        type: 'eval',
-        params: { script: 'return 1 + 1' },
-      });
-      const evalResult = evalResp as any;
-      if (!evalResult.success) {
-        console.log('Eval Response:', evalResult);
-      }
-      expect(evalResult.data.result).toBe(2);
 
       // Reload
       const reloadResp = await mockServer.sendCommandAndWaitForResponse({
