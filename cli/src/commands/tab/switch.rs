@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TabSwitchCommand {
+    #[serde(rename = "tabId")]
     pub tab_id: i32,
 }
 
